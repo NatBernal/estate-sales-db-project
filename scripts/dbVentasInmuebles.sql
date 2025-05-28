@@ -6,8 +6,8 @@
 --Observación:
 
 /*
-Dataset usado: Real Estate Sales 2001-2022
-Link: https://www.kaggle.com/datasets/omniamahmoudsaeed/real-estate-sales-2001-2022
+Dataset utilizado: Real Estate Sales 2001–2022
+Fuente: https://www.kaggle.com/datasets/omniamahmoudsaeed/real-estate-sales-2001-2022
 */
 
 -- EJECUTAR COMO USUARIO SYSTEM
@@ -37,17 +37,51 @@ GRANT
     INSERT ANY TABLE
 TO USER_PRUEBA;
 
-ALTER USER USER_PRUEBA
-    QUOTA UNLIMITED ON DATOS_VENTAS;
-
-ALTER USER USER_PRUEBA
-    QUOTA UNLIMITED ON TS_INDICES_VENTAS;
+-- Asignar cuota de espacio
+ALTER USER USER_PRUEBA QUOTA UNLIMITED ON DATOS_VENTAS;
+ALTER USER USER_PRUEBA QUOTA UNLIMITED ON TS_INDICES_VENTAS;
 
 -- Conectar como USER_PRUEBA
 CONN USER_PRUEBA/abc987;
 
 -- Crear secuencia para el id de pueblo
 CREATE SEQUENCE SEQ_PUEBLO_ID
+START WITH 1
+INCREMENT BY 1
+NOCACHE NOCYCLE;
+
+-- Crear secuencia para el id de tipo de propiedad
+CREATE SEQUENCE SEQ_TIPO_PROPIEDAD_ID
+START WITH 1
+INCREMENT BY 1
+NOCACHE NOCYCLE;
+
+-- Crear secuencia para el id de tipo de residencia
+CREATE SEQUENCE SEQ_TIPO_RESIDENCIA_ID
+START WITH 1
+INCREMENT BY 1
+NOCACHE NOCYCLE;
+
+-- Crear secuencia para el id de localizacion
+CREATE SEQUENCE SEQ_LOCALIZACIONES_ID
+START WITH 1
+INCREMENT BY 1
+NOCACHE NOCYCLE;
+
+-- Crear secuencia para el id de observaciones
+CREATE SEQUENCE SEQ_OBSERVACIONES_ID
+START WITH 1
+INCREMENT BY 1
+NOCACHE NOCYCLE;
+
+-- Crear secuencia para el id de ventas
+CREATE SEQUENCE SEQ_VENTAS_ID
+START WITH 1
+INCREMENT BY 1
+NOCACHE NOCYCLE;
+
+-- Crear secuencia para el id de propiedades
+CREATE SEQUENCE SEQ_PROPIEDAD_ID
 START WITH 1
 INCREMENT BY 1
 NOCACHE NOCYCLE;
@@ -59,15 +93,9 @@ CREATE TABLE PUEBLOS(
 ) TABLESPACE DATOS_VENTAS;
 
 -- Comentarios de la tabla pueblos
-COMMENT ON TABLE PUEBLOS IS 'Pueblos de Estados Unidos';
-COMMENT ON COLUMN PUEBLOS.id_pueblo IS 'Identificador de pueblo';
-COMMENT ON COLUMN PUEBLOS.nombre IS 'Nombre del pueblo';
-
--- Crear secuencia para el id de tipo de propiedad
-CREATE SEQUENCE SEQ_TIPO_PROPIEDAD_ID
-START WITH 1
-INCREMENT BY 1
-NOCACHE NOCYCLE;
+COMMENT ON TABLE PUEBLOS IS 'Lista de pueblos o ciudades de EE.UU. donde se ubican propiedades.';
+COMMENT ON COLUMN PUEBLOS.id_pueblo IS 'Identificador único del pueblo.';
+COMMENT ON COLUMN PUEBLOS.nombre IS 'Nombre del pueblo o ciudad.';
 
 -- Crear tabla de tipos de propiedad
 CREATE TABLE TIPOS_PROPIEDAD(
@@ -76,16 +104,9 @@ CREATE TABLE TIPOS_PROPIEDAD(
 ) TABLESPACE DATOS_VENTAS;
 
 -- Comentarios de la tabla tipos de propiedad
-COMMENT ON TABLE TIPOS_PROPIEDAD IS 'Tipos de propiedad';
-COMMENT ON COLUMN TIPOS_PROPIEDAD.id_tipo_propiedad IS 'Identificador de tipo de propiedad';
-COMMENT ON COLUMN TIPOS_PROPIEDAD.descripcion IS 'Descripcion del tipo de propiedad';
-
-
--- Crear secuencia para el id de tipo de residencia
-CREATE SEQUENCE SEQ_TIPO_RESIDENCIA_ID
-START WITH 1
-INCREMENT BY 1
-NOCACHE NOCYCLE;
+COMMENT ON TABLE TIPOS_PROPIEDAD IS 'Tipos generales de propiedad (ej. Comercial, Residencial).';
+COMMENT ON COLUMN TIPOS_PROPIEDAD.id_tipo_propiedad IS 'Identificador único del tipo de propiedad.';
+COMMENT ON COLUMN TIPOS_PROPIEDAD.descripcion IS 'Descripción del tipo de propiedad.';
 
 -- Crear tabla de tipos de residencia
 CREATE TABLE TIPOS_RESIDENCIA(
@@ -94,15 +115,9 @@ CREATE TABLE TIPOS_RESIDENCIA(
 ) TABLESPACE DATOS_VENTAS;
 
 -- Comentarios de la tabla tipos de residencia
-COMMENT ON TABLE TIPOS_RESIDENCIA IS 'Tipos de residencia';
-COMMENT ON COLUMN TIPOS_RESIDENCIA.id_tipo_residencia IS 'Identificador de tipo de residencia';
-COMMENT ON COLUMN TIPOS_RESIDENCIA.descripcion IS 'Descripcion del tipo de residencia';
-
--- Crear secuencia para el id de localizacion
-CREATE SEQUENCE SEQ_LOCALIZACIONES_ID
-START WITH 1
-INCREMENT BY 1
-NOCACHE NOCYCLE;
+COMMENT ON TABLE TIPOS_RESIDENCIA IS 'Clasificación del tipo de residencia (ej. Unifamiliar, Multifamiliar).';
+COMMENT ON COLUMN TIPOS_RESIDENCIA.id_tipo_residencia IS 'Identificador único del tipo de residencia.';
+COMMENT ON COLUMN TIPOS_RESIDENCIA.descripcion IS 'Descripción del tipo de residencia.';
 
 -- Crear tabla de ubicaciones
 CREATE TABLE LOCALIZACIONES(
@@ -115,38 +130,29 @@ CREATE TABLE LOCALIZACIONES(
 
 -- Comentarios de la tabla localizaciones
 COMMENT ON TABLE LOCALIZACIONES IS 'Ubicaciones de las propiedades';
-COMMENT ON COLUMN LOCALIZACIONES.id_ubicacion IS 'Identificador de ubicacion';
-COMMENT ON COLUMN LOCALIZACIONES.id_pueblo IS 'Identificador de pueblo';
-COMMENT ON COLUMN LOCALIZACIONES.latitud IS 'Latitud de la ubicacion';
-COMMENT ON COLUMN LOCALIZACIONES.longitud IS 'Longitud de la ubicacion';
-COMMENT ON COLUMN LOCALIZACIONES.direccion IS 'Direccion de la propiedad';
+COMMENT ON TABLE LOCALIZACIONES IS 'Información geográfica y dirección específica de cada propiedad.';
+COMMENT ON COLUMN LOCALIZACIONES.id_localizacion IS 'Identificador único de la localización.';
+COMMENT ON COLUMN LOCALIZACIONES.id_pueblo IS 'Llave foránea al pueblo correspondiente.';
+COMMENT ON COLUMN LOCALIZACIONES.latitud IS 'Coordenada geográfica de latitud.';
+COMMENT ON COLUMN LOCALIZACIONES.longitud IS 'Coordenada geográfica de longitud.';
+COMMENT ON COLUMN LOCALIZACIONES.direccion IS 'Dirección textual de la propiedad.';
 
--- Crear secuencia para el id de observaciones
-CREATE SEQUENCE SEQ_OBSERVACIONES_ID
-START WITH 1
-INCREMENT BY 1
-NOCACHE NOCYCLE;
-
--- Crear tabla de observaciones
-CREATE TABLE OBSERVACIONES(
-    id_observacion NUMBER DEFAULT SEQ_OBSERVACIONES_ID.NEXTVAL,
-    id_venta NUMBER NOT NULL,
-    nota VARCHAR2(100) NOT NULL,
-    tipo_origen CHAR(3) NOT NULL
+-- Crear tabla de propiedades
+CREATE TABLE PROPIEDADES(
+    id_propiedad NUMBER DEFAULT SEQ_PROPIEDAD_ID.NEXTVAL,
+    id_tipo_propiedad NUMBER ,
+    id_tipo_residencia NUMBER,
+    id_localizacion NUMBER,
+    valor_catastral FLOAT
 ) TABLESPACE DATOS_VENTAS;
 
--- Comentarios de la tabla observaciones
-COMMENT ON TABLE OBSERVACIONES IS 'Observaciones de las propiedades p';
-COMMENT ON COLUMN OBSERVACIONES.id_observacion IS 'Identificador de observacion';
-COMMENT ON COLUMN OBSERVACIONES.id_venta IS 'Identificador de la venta';
-COMMENT ON COLUMN OBSERVACIONES.nota IS 'Nota de la observacion';
-COMMENT ON COLUMN OBSERVACIONES.tipo_origen IS 'Tipo de origen de la observacion(ASE = Asesor de Ventas, OPM = Office of Policy and Management)';
-
--- Crear secuencia para el id de ventas
-CREATE SEQUENCE SEQ_VENTAS_ID
-START WITH 1
-INCREMENT BY 1
-NOCACHE NOCYCLE;
+-- Comentarios de la tabla propiedades
+COMMENT ON TABLE PROPIEDADES IS 'Propiedades inmobiliarias registradas en la base de datos.';
+COMMENT ON COLUMN PROPIEDADES.id_propiedad IS 'Identificador único de la propiedad.';
+COMMENT ON COLUMN PROPIEDADES.id_tipo_propiedad IS 'Tipo general de propiedad.';
+COMMENT ON COLUMN PROPIEDADES.id_tipo_residencia IS 'Tipo de residencia, si aplica.';
+COMMENT ON COLUMN PROPIEDADES.id_localizacion IS 'Ubicación asociada a la propiedad.';
+COMMENT ON COLUMN PROPIEDADES.valor_catastral IS 'Valor fiscal de la propiedad.';
 
 CREATE TABLE VENTAS (
     id_venta NUMBER DEFAULT SEQ_VENTAS_ID.NEXTVAL,
@@ -170,25 +176,17 @@ COMMENT ON COLUMN VENTAS.valor_venta IS 'Valor de la venta';
 COMMENT ON COLUMN VENTAS.relacion_venta IS 'Relacion de la venta';
 COMMENT ON COLUMN VENTAS.codigo_no_uso IS 'Codigo de no uso de la venta';
 
--- Crear secuencia para el id de propiedades
-CREATE SEQUENCE SEQ_PROPIEDAD_ID
-START WITH 1
-INCREMENT BY 1
-NOCACHE NOCYCLE;
-
--- Crear tabla de propiedades
-CREATE TABLE PROPIEDAD(
-    id_propiedad NUMBER DEFAULT SEQ_PROPIEDAD_ID.NEXTVAL,
-    id_tipo_propiedad NUMBER ,
-    id_tipo_residencia NUMBER,
-    id_localizacion NUMBER,
-    valor_catastral FLOAT
+-- Crear tabla de observaciones
+CREATE TABLE OBSERVACIONES(
+    id_observacion NUMBER DEFAULT SEQ_OBSERVACIONES_ID.NEXTVAL,
+    id_venta NUMBER NOT NULL,
+    nota VARCHAR2(100) NOT NULL,
+    tipo_origen CHAR(3) NOT NULL
 ) TABLESPACE DATOS_VENTAS;
 
--- Comentarios de la tabla propiedades
-COMMENT ON TABLE PROPIEDAD IS 'Propiedades';
-COMMENT ON COLUMN PROPIEDAD.id_propiedad IS 'Identificador de propiedad';
-COMMENT ON COLUMN PROPIEDAD.id_localizacion IS 'Identificador de localizacion';
-COMMENT ON COLUMN PROPIEDAD.id_tipo_propiedad IS 'Identificador de tipo de propiedad';
-COMMENT ON COLUMN PROPIEDAD.id_tipo_residencia IS 'Identificador de tipo de residencia';
-COMMENT ON COLUMN PROPIEDAD.id_venta IS 'Identificador de venta';
+-- Comentarios de la tabla observaciones
+COMMENT ON TABLE OBSERVACIONES IS 'Observaciones registradas sobre una venta específica.';
+COMMENT ON COLUMN OBSERVACIONES.id_observacion IS 'Identificador único de la observación.';
+COMMENT ON COLUMN OBSERVACIONES.id_venta IS 'Venta a la que pertenece esta observación.';
+COMMENT ON COLUMN OBSERVACIONES.nota IS 'Contenido textual de la observación.';
+COMMENT ON COLUMN OBSERVACIONES.tipo_origen IS 'Tipo de origen de la observacion(ASE = Asesor de Ventas, OPM = Office of Policy and Management)';
