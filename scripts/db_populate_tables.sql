@@ -120,7 +120,7 @@ BEGIN
             TABLA_PRUEBA
         WHERE
             TIPO_PROPIEDAD IS NOT NULL
-            AND TRIM(TIPO_PROPIEDAD) != ''
+            AND LENGTH(TRIM(TIPO_PROPIEDAD)) > 0
             AND NOT EXISTS (
                 SELECT
                     1
@@ -157,7 +157,7 @@ BEGIN
             TABLA_PRUEBA
         WHERE
             TIPO_RESIDENCIA IS NOT NULL
-            AND TRIM(TIPO_RESIDENCIA) != ''
+            AND LENGTH(TRIM(TIPO_RESIDENCIA)) > 0
             AND NOT EXISTS (
                 SELECT
                     1
@@ -180,75 +180,64 @@ EXCEPTION
 END SP_POBLAR_TIPOS_RESIDENCIA;
 /
 
--- Procedimiento para poblar tabla LOCALIZACIONES
+-- Funcion para extraer latitud y longitud de un campo LOCATION
+CREATE OR REPLACE FUNCTION EXTRACT_COORDINATES (
+    P_LOCATION   IN VARCHAR2,
+    P_RETURN_LAT IN CHAR
+) RETURN NUMBER IS
+    V_LONGITUD VARCHAR2(50);
+    V_LATITUD  VARCHAR2(50);
+BEGIN
+    IF P_LOCATION IS NULL THEN
+        RETURN NULL;
+    END IF;
+    
+    -- Extraer ambas coordenadas en una sola pasada
+    V_LONGITUD := REGEXP_SUBSTR(P_LOCATION, 'POINT\s*\(([-0-9.]+)\s+([-0-9.]+)\)', 1, 1, 'i',
+                                1);
+    V_LATITUD := REGEXP_SUBSTR(P_LOCATION, 'POINT\s*\(([-0-9.]+)\s+([-0-9.]+)\)', 1, 1, 'i',
+                               2);
+    
+    -- Devolver según el parámetro solicitado
+    IF P_RETURN_LAT = '1' THEN
+        RETURN TO_NUMBER ( V_LATITUD, '999.999999999', 'NLS_NUMERIC_CHARACTERS=''.,''' );
+    ELSE
+        RETURN TO_NUMBER ( V_LONGITUD, '999.999999999', 'NLS_NUMERIC_CHARACTERS=''.,''' );
+    END IF;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN NULL;
+END EXTRACT_COORDINATES;
+/
+
+--  Procedimiento para poblar tabla LOCALIZACIONES
 CREATE OR REPLACE PROCEDURE SP_POBLAR_LOCALIZACIONES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
-    V_LATITUD          NUMBER;
-    V_LONGITUD         NUMBER;
-    V_POS_INI          NUMBER;
-    V_POS_FIN          NUMBER;
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE LOCALIZACIONES ===');
     FOR REC IN (
         SELECT DISTINCT
-            PUEBLO,
-            ADDRESS,
-            LOCATION
+            T.PUEBLO,
+            T.DIRECCION,
+            T.COORDENADAS
         FROM
-            TABLA_PRUEBA
+            TABLA_PRUEBA T
         WHERE
-            ADDRESS IS NOT NULL
-            AND TRIM(ADDRESS) != ''
+            T.DIRECCION IS NOT NULL
+            AND LENGTH(TRIM(T.DIRECCION)) > 0
             AND NOT EXISTS (
                 SELECT
                     1
                 FROM
                     LOCALIZACIONES L
                 WHERE
-                    UPPER(L.DIRECCION) = UPPER(TABLA_PRUEBA.ADDRESS)
+                    UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
             )
     ) LOOP
-        -- Extraer latitud y longitud del campo LOCATION
-        V_LATITUD := NULL;
-        V_LONGITUD := NULL;
-        IF
-            REC.LOCATION IS NOT NULL
-            AND INSTR(
-                UPPER(REC.LOCATION),
-                'POINT'
-            ) > 0
-        THEN
-            V_POS_INI := INSTR(REC.LOCATION, '(') + 1;
-            V_POS_FIN := INSTR(REC.LOCATION, ')') - 1;
-            IF
-                V_POS_INI > 1
-                AND V_POS_FIN > V_POS_INI
-            THEN
-                DECLARE
-                    V_COORDS    VARCHAR2(100);
-                    V_SPACE_POS NUMBER;
-                BEGIN
-                    V_COORDS := TRIM(SUBSTR(REC.LOCATION, V_POS_INI, V_POS_FIN - V_POS_INI + 1));
-
-                    V_SPACE_POS := INSTR(V_COORDS, ' ');
-                    IF V_SPACE_POS > 0 THEN
-                        V_LONGITUD := TO_NUMBER ( TRIM(SUBSTR(V_COORDS, 1, V_SPACE_POS - 1)) );
-
-                        V_LATITUD := TO_NUMBER ( TRIM(SUBSTR(V_COORDS, V_SPACE_POS + 1)) );
-                    END IF;
-
-                EXCEPTION
-                    WHEN OTHERS THEN
-                        V_LATITUD := NULL;
-                        V_LONGITUD := NULL;
-                END;
-            END IF;
-
-        END IF;
-        
-        -- Insertar localización
+        -- Insertar localización usando la función auxiliar
         INSERT INTO LOCALIZACIONES (
             ID_PUEBLO,
             LATITUD,
@@ -262,9 +251,9 @@ BEGIN
             WHERE
                 UPPER(NOMBRE) = UPPER(REC.PUEBLO)
         ),
-                   V_LATITUD,
-                   V_LONGITUD,
-                   REC.ADDRESS );
+                   EXTRACT_COORDINATES(REC.COORDENADAS, 1),  -- 1 para TRUE (latitud)
+                   EXTRACT_COORDINATES(REC.COORDENADAS, 0),  -- 0 para FALSE (longitud)
+                   TRIM(UPPER(REC.DIRECCION)) );
 
         V_FILAS_INSERTADAS := V_FILAS_INSERTADAS + 1;
     END LOOP;
@@ -281,7 +270,7 @@ EXCEPTION
 END SP_POBLAR_LOCALIZACIONES;
 /
 
--- 8. Procedimiento para poblar tabla PROPIEDADES
+-- Procedimiento para poblar tabla PROPIEDADES
 CREATE OR REPLACE PROCEDURE SP_POBLAR_PROPIEDADES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
@@ -296,28 +285,28 @@ BEGIN
         VALOR_CATASTRAL
     )
         SELECT DISTINCT
-            TRE.SERIAL_NUMBER,
+            T.ID_PROPIEDAD,
             TP.ID_TIPO_PROPIEDAD,
             TR.ID_TIPO_RESIDENCIA,
             L.ID_LOCALIZACION,
-            TRE.ASSESSED_VALUE
+            T.VALOR_CATASTRAL
         FROM
-                 TABLA_PRUEBA TRE
-            INNER JOIN LOCALIZACIONES   L ON UPPER(L.DIRECCION) = UPPER(TRE.ADDRESS)
-            LEFT JOIN TIPOS_PROPIEDAD  TP ON UPPER(TP.DESCRIPCION) = UPPER(TRE.TIPO_PROPIEDAD)
-            LEFT JOIN TIPOS_RESIDENCIA TR ON UPPER(TR.DESCRIPCION) = UPPER(TRE.TIPO_RESIDENCIA)
+                 TABLA_PRUEBA T
+            INNER JOIN LOCALIZACIONES   L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+            LEFT JOIN TIPOS_PROPIEDAD  TP ON UPPER(TP.DESCRIPCION) = UPPER(T.TIPO_PROPIEDAD)
+            LEFT JOIN TIPOS_RESIDENCIA TR ON UPPER(TR.DESCRIPCION) = UPPER(T.TIPO_RESIDENCIA)
         WHERE
-            TRE.ADDRESS IS NOT NULL
-            AND TRE.SERIAL_NUMBER IS NOT NULL
-            AND TRIM(TRE.ADDRESS) != ''
-            AND TRIM(TRE.SERIAL_NUMBER) != ''
+            T.DIRECCION IS NOT NULL
+            AND T.ID_PROPIEDAD IS NOT NULL
+            AND LENGTH(TRIM(T.DIRECCION)) > 0
+            AND LENGTH(TRIM(T.ID_PROPIEDAD)) > 0
             AND NOT EXISTS (
                 SELECT
                     1
                 FROM
                     PROPIEDADES P
                 WHERE
-                    P.NUMERO_SERIAL = TRE.SERIAL_NUMBER
+                    P.NUMERO_SERIAL = T.ID_PROPIEDAD
             );
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
@@ -333,7 +322,7 @@ EXCEPTION
 END SP_POBLAR_PROPIEDADES;
 /
 
--- 9. Procedimiento para poblar tabla VENTAS
+-- Procedimiento para poblar tabla VENTAS
 CREATE OR REPLACE PROCEDURE SP_POBLAR_VENTAS (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
