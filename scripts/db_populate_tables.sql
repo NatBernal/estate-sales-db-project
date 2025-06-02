@@ -80,25 +80,23 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_PUEBLOS (
 BEGIN
     INSERT INTO PUEBLOS ( NOMBRE )
         SELECT DISTINCT
-            PUEBLO
+            UPPER(TRIM(T.PUEBLO))
         FROM
-            TABLA_PRUEBA
+            TABLA_PRUEBA T
         WHERE
-            PUEBLO IS NOT NULL
-            AND TRIM(PUEBLO) != ''
+            T.PUEBLO IS NOT NULL
+            AND LENGTH(TRIM(T.PUEBLO)) > 0
             AND NOT EXISTS (
                 SELECT
                     1
                 FROM
                     PUEBLOS P
                 WHERE
-                    UPPER(P.NOMBRE) = UPPER(TABLA_PRUEBA.PUEBLO)
+                    UPPER(P.NOMBRE) = UPPER(T.PUEBLO)
             );
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
-    
-    -- Registrar en control
     SP_REGISTRAR_CONTROL('PUEBLOS', V_FILAS_INSERTADAS, 'INSERT', P_FECHA_CARGA);
     DBMS_OUTPUT.PUT_LINE('Pueblos insertados: ' || V_FILAS_INSERTADAS);
     DBMS_OUTPUT.PUT_LINE('Fecha de proceso: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
@@ -109,7 +107,6 @@ EXCEPTION
         RAISE;
 END SP_POBLAR_PUEBLOS;
 /
-
 -- Procedimiento para poblar tabla TIPOS_PROPIEDAD
 CREATE OR REPLACE PROCEDURE SP_POBLAR_TIPOS_PROPIEDAD (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
