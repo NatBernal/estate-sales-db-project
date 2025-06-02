@@ -1,6 +1,6 @@
 --Archivo de creación de tabla temporal
---echa de creación: 01/06/2025
--- Creado por: Natalia Bernal & Mileth Martinez
+--Fecha de creación: 01/06/2025
+--Creado por: Natalia Bernal & Mileth Martinez
 --Modificado por:
 --Fecha de modificación:
 --Observación:
@@ -8,20 +8,23 @@
 -- EJECUTAR COMO USUARIO USER_PRUEBA
 
 -- Crear tabla temporal
-CREATE TABLE TABLA_PRUEBA ( id_propiedad NUMBER(38),
-  anio_venta NUMBER(38),
-  fecha_registro DATE,
-  pueblo VARCHAR2(26),
-  direccion VARCHAR2(128),
-  valor_catastral FLOAT,
-  valor_venta FLOAT,
-  relacion_venta VARCHAR2(26),
-  tipo_propiedad VARCHAR2(26),
-  tipo_residencia VARCHAR2(26),
-  cod_no_uso VARCHAR2(50),
-  ob_asesor VARCHAR2(128),
-  ob_opm VARCHAR2(65),
-  coordenadas VARCHAR2(128)) ;
+CREATE TABLE TABLA_PRUEBA (
+    ID_PROPIEDAD    NUMBER(38),
+    ANIO_VENTA      NUMBER(38),
+    FECHA_REGISTRO  DATE,
+    PUEBLO          VARCHAR2(26),
+    DIRECCION       VARCHAR2(128),
+    VALOR_CATASTRAL FLOAT,
+    VALOR_VENTA     FLOAT,
+    RELACION_VENTA  VARCHAR2(26),
+    TIPO_PROPIEDAD  VARCHAR2(26),
+    TIPO_RESIDENCIA VARCHAR2(26),
+    COD_NO_USO      VARCHAR2(50),
+    OB_ASESOR       VARCHAR2(128),
+    OB_OPM          VARCHAR2(65),
+    COORDENADAS     VARCHAR2(128)
+)
+TABLESPACE DATOS_VENTAS;
   
 -- Insercion de datos a la tabla temporal
 INSERT INTO TABLA_PRUEBA (ID_PROPIEDAD, ANIO_VENTA, FECHA_REGISTRO, PUEBLO, DIRECCION, VALOR_CATASTRAL, VALOR_VENTA, RELACION_VENTA, TIPO_PROPIEDAD, TIPO_RESIDENCIA, COD_NO_USO, OB_ASESOR, OB_OPM, COORDENADAS) VALUES (21078,2021,to_date('06/21/2022', 'MM/DD/RRRR'),'Deep River','6 WESTBROOK RD',19215000,22500000,'0.854','Residential','Single Family','25 - Other','','PER MLS HOUSE IN POOR CONDITION. CURRENTLY NO KITCHEN AND ONE BATH IS ROUGH PLUMBING ONLY.','POINT (-72.489289005 41.361251986)');
