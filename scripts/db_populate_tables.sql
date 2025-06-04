@@ -345,24 +345,6 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_VENTAS (
     V_DUPLICADOS_PRUEBA NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== CARGA DE VENTAS - MANEJANDO DUPLICADOS ===');
-
-/*    
-    -- Reportar estadísticas de duplicados
-    SELECT
-        COUNT(*) - COUNT(DISTINCT NUMERO_SERIAL)
-    INTO V_DUPLICADOS_PROP
-    FROM
-        PROPIEDADES;
-
-    SELECT
-        COUNT(*) - COUNT(DISTINCT NUMERO_SERIAL)
-    INTO V_DUPLICADOS_PRUEBA
-    FROM
-        TABLA_PRUEBA;
-
-    DBMS_OUTPUT.PUT_LINE('Duplicados en PROPIEDADES: ' || V_DUPLICADOS_PROP);
-    DBMS_OUTPUT.PUT_LINE('Duplicados en TABLA_PRUEBA: ' || V_DUPLICADOS_PRUEBA);
-    */
     
     INSERT INTO VENTAS (
         ID_PROPIEDAD,
@@ -445,25 +427,6 @@ EXCEPTION
 END SP_POBLAR_VENTAS;
 /
 
-
-
-
-
-
-
-
-
-BEGIN
-  SP_POBLAR_VENTAS;
-  SP_POBLAR_OBSERVACIONES;
-END;
-
-
-select * from control_carga;
-select * from localizaciones WHERE LONGITUD IS NOT NULL;
-delete from localizaciones;
-select * from tabla_prueba;
-
 -- Procedimiento para poblar tabla OBSERVACIONES
 CREATE OR REPLACE PROCEDURE SP_POBLAR_OBSERVACIONES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
@@ -479,22 +442,21 @@ BEGIN
     SELECT COUNT(*) INTO V_REGISTROS_VENTAS FROM VENTAS;
     DBMS_OUTPUT.PUT_LINE('Registros en VENTAS para referenciar: ' || V_REGISTROS_VENTAS);
     
-    -- CORECCIÓN 1: Insertar observaciones de asesores (ASE)
     INSERT INTO OBSERVACIONES (
         ID_VENTA,
         NOTA,
         TIPO_ORIGEN
     )
     WITH OBSERVACIONES_ASE AS (
-        SELECT DISTINCT -- Evitar duplicados
+        SELECT DISTINCT
             V.ID_VENTA,
-            TP.OB_ASESOR as NOTA_ASE, -- Nombre correcto de columna
+            TP.OB_ASESOR as NOTA_ASE,
             'ASE' as TIPO
         FROM TABLA_PRUEBA TP
-        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL -- Nombre correcto
+        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL 
         INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                           AND V.ANIO_VENTA = TP.ANIO_VENTA     -- Nombre correcto
-                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO -- Nombre correcto
+                           AND V.ANIO_VENTA = TP.ANIO_VENTA
+                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO
         WHERE TP.OB_ASESOR IS NOT NULL
           AND LENGTH(TRIM(TP.OB_ASESOR)) > 0
     )
@@ -503,22 +465,21 @@ BEGIN
 
     V_FILAS_ASE := SQL%ROWCOUNT;
     
-    -- CORECCIÓN 2: Insertar observaciones de OPM
     INSERT INTO OBSERVACIONES (
         ID_VENTA,
         NOTA,
         TIPO_ORIGEN
     )
     WITH OBSERVACIONES_OPM AS (
-        SELECT DISTINCT -- Evitar duplicados
+        SELECT DISTINCT
             V.ID_VENTA,
-            TP.OB_OPM as NOTA_OPM, -- Nombre correcto de columna
+            TP.OB_OPM as NOTA_OPM,
             'OPM' as TIPO
         FROM TABLA_PRUEBA TP
-        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL -- Nombre correcto
+        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL
         INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                           AND V.ANIO_VENTA = TP.ANIO_VENTA     -- Nombre correcto
-                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO -- Nombre correcto
+                           AND V.ANIO_VENTA = TP.ANIO_VENTA
+                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO
         WHERE TP.OB_OPM IS NOT NULL
           AND LENGTH(TRIM(TP.OB_OPM)) > 0
     )
