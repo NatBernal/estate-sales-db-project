@@ -143,7 +143,7 @@ EXCEPTION
 END SP_POBLAR_TIPOS_PROPIEDAD;
 /
 
--- 6. Procedimiento para poblar tabla TIPOS_RESIDENCIA
+-- Procedimiento para poblar tabla TIPOS_RESIDENCIA
 CREATE OR REPLACE PROCEDURE SP_POBLAR_TIPOS_RESIDENCIA (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
@@ -285,7 +285,7 @@ BEGIN
         VALOR_CATASTRAL
     )
         SELECT DISTINCT
-            T.ID_PROPIEDAD,
+            T.NUMERO_SERIAL,
             TP.ID_TIPO_PROPIEDAD,
             TR.ID_TIPO_RESIDENCIA,
             L.ID_LOCALIZACION,
@@ -297,16 +297,16 @@ BEGIN
             LEFT JOIN TIPOS_RESIDENCIA TR ON UPPER(TR.DESCRIPCION) = UPPER(T.TIPO_RESIDENCIA)
         WHERE
             T.DIRECCION IS NOT NULL
-            AND T.ID_PROPIEDAD IS NOT NULL
+            AND T.NUMERO_SERIAL IS NOT NULL
             AND LENGTH(TRIM(T.DIRECCION)) > 0
-            AND LENGTH(TRIM(T.ID_PROPIEDAD)) > 0
+            AND LENGTH(TRIM(T.NUMERO_SERIAL)) > 0
             AND NOT EXISTS (
                 SELECT
                     1
                 FROM
                     PROPIEDADES P
                 WHERE
-                    P.NUMERO_SERIAL = T.ID_PROPIEDAD
+                    P.NUMERO_SERIAL = T.NUMERO_SERIAL
             );
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
@@ -322,13 +322,48 @@ EXCEPTION
 END SP_POBLAR_PROPIEDADES;
 /
 
+-- 1. CREAR ÍNDICES COMPUESTOS MÁS SELECTIVOS
+CREATE INDEX IDX_PROP_SERIAL_ID_COMP ON
+    PROPIEDADES (
+        NUMERO_SERIAL,
+        ID_PROPIEDAD
+    );
+
+CREATE INDEX IDX_PRUEBA_SERIAL_COMP ON
+    TABLA_PRUEBA (
+        NUMERO_SERIAL,
+        ANIO_VENTA,
+        FECHA_REGISTRO
+    );
+
 -- Procedimiento para poblar tabla VENTAS
 CREATE OR REPLACE PROCEDURE SP_POBLAR_VENTAS (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
-    V_FILAS_INSERTADAS NUMBER := 0;
+    V_FILAS_INSERTADAS  NUMBER := 0;
+    V_DUPLICADOS_PROP   NUMBER := 0;
+    V_DUPLICADOS_PRUEBA NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE VENTAS ===');
+    DBMS_OUTPUT.PUT_LINE('=== CARGA DE VENTAS - MANEJANDO DUPLICADOS ===');
+
+/*    
+    -- Reportar estadísticas de duplicados
+    SELECT
+        COUNT(*) - COUNT(DISTINCT NUMERO_SERIAL)
+    INTO V_DUPLICADOS_PROP
+    FROM
+        PROPIEDADES;
+
+    SELECT
+        COUNT(*) - COUNT(DISTINCT NUMERO_SERIAL)
+    INTO V_DUPLICADOS_PRUEBA
+    FROM
+        TABLA_PRUEBA;
+
+    DBMS_OUTPUT.PUT_LINE('Duplicados en PROPIEDADES: ' || V_DUPLICADOS_PROP);
+    DBMS_OUTPUT.PUT_LINE('Duplicados en TABLA_PRUEBA: ' || V_DUPLICADOS_PRUEBA);
+    */
+    
     INSERT INTO VENTAS (
         ID_PROPIEDAD,
         ANIO_VENTA,
@@ -337,24 +372,70 @@ BEGIN
         RELACION_VENTA,
         CODIGO_NO_USO
     )
+        WITH 
+         PROPIEDADES_UNICAS AS (
+            SELECT
+                NUMERO_SERIAL,
+                ID_PROPIEDAD,
+                ROW_NUMBER()
+                OVER(PARTITION BY NUMERO_SERIAL
+                     ORDER BY
+                         ID_PROPIEDAD DESC  -- Tomar la más reciente
+                ) AS RN_PROP
+            FROM
+                PROPIEDADES
+            WHERE
+                NUMERO_SERIAL IS NOT NULL
+        ),
+         PRUEBA_UNICA AS (
+            SELECT
+                NUMERO_SERIAL,
+                ANIO_VENTA,
+                FECHA_REGISTRO,
+                VALOR_VENTA,
+                RELACION_VENTA,
+                COD_NO_USO,
+                ROW_NUMBER()
+                OVER(PARTITION BY NUMERO_SERIAL
+                     ORDER BY
+                         FECHA_REGISTRO DESC, ANIO_VENTA DESC
+                ) AS RN_PRUEBA
+            FROM
+                TABLA_PRUEBA
+            WHERE
+                NUMERO_SERIAL IS NOT NULL
+                AND LENGTH(TRIM(NUMERO_SERIAL)) > 0
+        )
         SELECT
-            P.ID_PROPIEDAD,
-            TRE.LIST_YEAR,
-            TRE.DATE_RECORDED,
-            TRE.SALE_AMOUNT,
-            TRE.SALES_RATIO,
-            TRE.NON_USE_CODE
+            PU.ID_PROPIEDAD,
+            PR.ANIO_VENTA,
+            PR.FECHA_REGISTRO,
+            PR.VALOR_VENTA,
+            CASE
+                WHEN REGEXP_LIKE ( TRIM(PR.RELACION_VENTA),
+                                   '^-?[0-9]+\.?[0-9]*$' ) THEN
+                    TO_NUMBER(REPLACE(
+                        TRIM(PR.RELACION_VENTA),
+                        '.',
+                        ','
+                    ))
+                ELSE
+                    ROUND(TO_NUMBER(REPLACE(PR.RELACION_VENTA, '.', '')) / 1000000000,
+                          3)
+            END,
+            PR.COD_NO_USO
         FROM
-                 TABLA_PRUEBA TRE
-            INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TRE.SERIAL_NUMBER
+                 PRUEBA_UNICA PR
+            INNER JOIN PROPIEDADES_UNICAS PU ON PU.NUMERO_SERIAL = PR.NUMERO_SERIAL
         WHERE
-            TRE.SERIAL_NUMBER IS NOT NULL
-            AND TRIM(TRE.SERIAL_NUMBER) != '';
+                PU.RN_PROP = 1
+            AND PR.RN_PRUEBA = 1;
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
     SP_REGISTRAR_CONTROL('VENTAS', V_FILAS_INSERTADAS, 'INSERT', P_FECHA_CARGA);
     DBMS_OUTPUT.PUT_LINE('Ventas insertadas: ' || V_FILAS_INSERTADAS);
+    DBMS_OUTPUT.PUT_LINE('Registros esperados: ~24,854 (número de NUMERO_SERIAL únicos)');
     DBMS_OUTPUT.PUT_LINE('Fecha de proceso: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
 EXCEPTION
     WHEN OTHERS THEN
@@ -364,128 +445,104 @@ EXCEPTION
 END SP_POBLAR_VENTAS;
 /
 
--- 10. Procedimiento para poblar tabla OBSERVACIONES
+
+
+
+
+
+
+
+
+BEGIN
+  SP_POBLAR_VENTAS;
+  SP_POBLAR_OBSERVACIONES;
+END;
+
+
+select * from control_carga;
+select * from localizaciones WHERE LONGITUD IS NOT NULL;
+delete from localizaciones;
+select * from tabla_prueba;
+
+-- Procedimiento para poblar tabla OBSERVACIONES
 CREATE OR REPLACE PROCEDURE SP_POBLAR_OBSERVACIONES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
-    V_FILAS_INSERTADAS NUMBER := 0;
+    V_FILAS_ASE        NUMBER := 0;
+    V_FILAS_OPM        NUMBER := 0;
     V_TOTAL_OBS        NUMBER := 0;
+    V_REGISTROS_VENTAS NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE OBSERVACIONES ===');
     
-    -- Insertar observaciones de asesores (ASE)
-    INSERT INTO OBSERVACIONES (
-        ID_VENTA,
-        NOTA,
-        TIPO_ORIGEN
-    )
-        SELECT
-            V.ID_VENTA,
-            TRE.ASSESSOR_REMARKS,
-            'ASE'
-        FROM
-                 TABLA_PRUEBA TRE
-            INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TRE.SERIAL_NUMBER
-            INNER JOIN VENTAS      V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                                   AND V.ANIO_VENTA = TRE.LIST_YEAR
-                                   AND V.FECHA_REGISTRO = TRE.DATE_RECORDED
-        WHERE
-            TRE.ASSESSOR_REMARKS IS NOT NULL
-            AND TRIM(TRE.ASSESSOR_REMARKS) != '';
-
-    V_FILAS_INSERTADAS := SQL%ROWCOUNT;
-    V_TOTAL_OBS := V_FILAS_INSERTADAS;
+    -- Verificar cuántas ventas tenemos como referencia
+    SELECT COUNT(*) INTO V_REGISTROS_VENTAS FROM VENTAS;
+    DBMS_OUTPUT.PUT_LINE('Registros en VENTAS para referenciar: ' || V_REGISTROS_VENTAS);
     
-    -- Insertar observaciones de OPM
+    -- CORECCIÓN 1: Insertar observaciones de asesores (ASE)
     INSERT INTO OBSERVACIONES (
         ID_VENTA,
         NOTA,
         TIPO_ORIGEN
     )
-        SELECT
+    WITH OBSERVACIONES_ASE AS (
+        SELECT DISTINCT -- Evitar duplicados
             V.ID_VENTA,
-            TRE.OPM_REMARKS,
-            'OPM'
-        FROM
-                 TABLA_PRUEBA TRE
-            INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TRE.SERIAL_NUMBER
-            INNER JOIN VENTAS      V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                                   AND V.ANIO_VENTA = TRE.LIST_YEAR
-                                   AND V.FECHA_REGISTRO = TRE.DATE_RECORDED
-        WHERE
-            TRE.OPM_REMARKS IS NOT NULL
-            AND TRIM(TRE.OPM_REMARKS) != '';
+            TP.OB_ASESOR as NOTA_ASE, -- Nombre correcto de columna
+            'ASE' as TIPO
+        FROM TABLA_PRUEBA TP
+        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL -- Nombre correcto
+        INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
+                           AND V.ANIO_VENTA = TP.ANIO_VENTA     -- Nombre correcto
+                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO -- Nombre correcto
+        WHERE TP.OB_ASESOR IS NOT NULL
+          AND LENGTH(TRIM(TP.OB_ASESOR)) > 0
+    )
+    SELECT ID_VENTA, NOTA_ASE, TIPO
+    FROM OBSERVACIONES_ASE;
 
-    V_TOTAL_OBS := V_TOTAL_OBS + SQL%ROWCOUNT;
+    V_FILAS_ASE := SQL%ROWCOUNT;
+    
+    -- CORECCIÓN 2: Insertar observaciones de OPM
+    INSERT INTO OBSERVACIONES (
+        ID_VENTA,
+        NOTA,
+        TIPO_ORIGEN
+    )
+    WITH OBSERVACIONES_OPM AS (
+        SELECT DISTINCT -- Evitar duplicados
+            V.ID_VENTA,
+            TP.OB_OPM as NOTA_OPM, -- Nombre correcto de columna
+            'OPM' as TIPO
+        FROM TABLA_PRUEBA TP
+        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL -- Nombre correcto
+        INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
+                           AND V.ANIO_VENTA = TP.ANIO_VENTA     -- Nombre correcto
+                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO -- Nombre correcto
+        WHERE TP.OB_OPM IS NOT NULL
+          AND LENGTH(TRIM(TP.OB_OPM)) > 0
+    )
+    SELECT ID_VENTA, NOTA_OPM, TIPO
+    FROM OBSERVACIONES_OPM;
+
+    V_FILAS_OPM := SQL%ROWCOUNT;
+    V_TOTAL_OBS := V_FILAS_ASE + V_FILAS_OPM;
+    
     COMMIT;
+    
     SP_REGISTRAR_CONTROL('OBSERVACIONES', V_TOTAL_OBS, 'INSERT', P_FECHA_CARGA);
+    
     DBMS_OUTPUT.PUT_LINE('Observaciones insertadas: ' || V_TOTAL_OBS);
-    DBMS_OUTPUT.PUT_LINE('  - ASE: ' || V_FILAS_INSERTADAS);
-    DBMS_OUTPUT.PUT_LINE('  - OPM: ' ||(V_TOTAL_OBS - V_FILAS_INSERTADAS));
+    DBMS_OUTPUT.PUT_LINE('  - ASE: ' || V_FILAS_ASE);
+    DBMS_OUTPUT.PUT_LINE('  - OPM: ' || V_FILAS_OPM);
     DBMS_OUTPUT.PUT_LINE('Fecha de proceso: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
+    
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
         DBMS_OUTPUT.PUT_LINE('Error al poblar observaciones: ' || SQLERRM);
         RAISE;
 END SP_POBLAR_OBSERVACIONES;
-/
-
--- 11. Procedimiento maestro para carga completa
-CREATE OR REPLACE PROCEDURE SP_CARGA_COMPLETA (
-    P_FECHA_CARGA IN DATE DEFAULT SYSDATE
-) AS
-    V_INICIO_PROCESO DATE;
-    V_FIN_PROCESO    DATE;
-BEGIN
-    V_INICIO_PROCESO := SYSDATE;
-    DBMS_OUTPUT.PUT_LINE('===============================================');
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA COMPLETA DE DATOS      ===');
-    DBMS_OUTPUT.PUT_LINE('=== Fecha de carga: '
-                         || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS')
-                         || ' ===');
-    DBMS_OUTPUT.PUT_LINE('=== Inicio real: '
-                         || TO_CHAR(V_INICIO_PROCESO, 'DD/MM/YYYY HH24:MI:SS')
-                         || '    ===');
-    DBMS_OUTPUT.PUT_LINE('===============================================');
-    
-    -- Limpiar tabla de control
-    DELETE FROM CONTROL_CARGA
-    WHERE
-        FECHA_PROCESO = P_FECHA_CARGA;
-
-    COMMIT;
-    
-    -- Poblar tablas de catálogo
-    DBMS_OUTPUT.PUT_LINE('1. Poblando pueblos...');
-    SP_POBLAR_PUEBLOS(P_FECHA_CARGA);
-    DBMS_OUTPUT.PUT_LINE('2. Poblando tipos de propiedad...');
-    SP_POBLAR_TIPOS_PROPIEDAD(P_FECHA_CARGA);
-    DBMS_OUTPUT.PUT_LINE('3. Poblando tipos de residencia...');
-    SP_POBLAR_TIPOS_RESIDENCIA(P_FECHA_CARGA);
-    DBMS_OUTPUT.PUT_LINE('4. Poblando localizaciones...');
-    SP_POBLAR_LOCALIZACIONES(P_FECHA_CARGA);
-    
-    -- Poblar tablas de datos
-    DBMS_OUTPUT.PUT_LINE('5. Poblando propiedades...');
-    SP_POBLAR_PROPIEDADES(P_FECHA_CARGA);
-    DBMS_OUTPUT.PUT_LINE('6. Poblando ventas...');
-    SP_POBLAR_VENTAS(P_FECHA_CARGA);
-    DBMS_OUTPUT.PUT_LINE('7. Poblando observaciones...');
-    SP_POBLAR_OBSERVACIONES(P_FECHA_CARGA);
-    V_FIN_PROCESO := SYSDATE;
-    DBMS_OUTPUT.PUT_LINE('===============================================');
-    DBMS_OUTPUT.PUT_LINE('=== CARGA COMPLETA FINALIZADA              ===');
-    DBMS_OUTPUT.PUT_LINE('=== Tiempo total: '
-                         || ROUND((V_FIN_PROCESO - V_INICIO_PROCESO) * 24 * 60, 2)
-                         || ' minutos ===');
-
-    DBMS_OUTPUT.PUT_LINE('===============================================');
-EXCEPTION
-    WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('ERROR EN CARGA COMPLETA: ' || SQLERRM);
-        RAISE;
-END SP_CARGA_COMPLETA;
 /
 
 -- 12. Procedimiento para limpiar base de datos (mantener estructura)
