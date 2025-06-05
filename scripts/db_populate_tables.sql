@@ -270,13 +270,16 @@ EXCEPTION
 END SP_POBLAR_LOCALIZACIONES;
 /
 
--- Procedimiento para poblar tabla PROPIEDADES
+-- =================================================================
+-- PROCEDIMIENTO CORREGIDO PARA PROPIEDADES
+-- =================================================================
 CREATE OR REPLACE PROCEDURE SP_POBLAR_PROPIEDADES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE PROPIEDADES ===');
+
     INSERT INTO PROPIEDADES (
         NUMERO_SERIAL,
         ID_TIPO_PROPIEDAD,
@@ -284,30 +287,29 @@ BEGIN
         ID_LOCALIZACION,
         VALOR_CATASTRAL
     )
-        SELECT DISTINCT
-            T.NUMERO_SERIAL,
-            TP.ID_TIPO_PROPIEDAD,
-            TR.ID_TIPO_RESIDENCIA,
-            L.ID_LOCALIZACION,
-            T.VALOR_CATASTRAL
-        FROM
-                 TABLA_PRUEBA T
-            INNER JOIN LOCALIZACIONES   L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
-            LEFT JOIN TIPOS_PROPIEDAD  TP ON UPPER(TP.DESCRIPCION) = UPPER(T.TIPO_PROPIEDAD)
-            LEFT JOIN TIPOS_RESIDENCIA TR ON UPPER(TR.DESCRIPCION) = UPPER(T.TIPO_RESIDENCIA)
-        WHERE
-            T.DIRECCION IS NOT NULL
-            AND T.NUMERO_SERIAL IS NOT NULL
-            AND LENGTH(TRIM(T.DIRECCION)) > 0
-            AND LENGTH(TRIM(T.NUMERO_SERIAL)) > 0
-            AND NOT EXISTS (
-                SELECT
-                    1
-                FROM
-                    PROPIEDADES P
-                WHERE
-                    P.NUMERO_SERIAL = T.NUMERO_SERIAL
-            );
+    SELECT
+        T.NUMERO_SERIAL,
+        TP.ID_TIPO_PROPIEDAD,
+        TR.ID_TIPO_RESIDENCIA,
+        L.ID_LOCALIZACION,
+        T.VALOR_CATASTRAL
+    FROM TABLA_PRUEBA T
+    INNER JOIN PUEBLOS PU
+        ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
+    INNER JOIN LOCALIZACIONES L
+        ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+       AND L.ID_PUEBLO = PU.ID_PUEBLO
+    LEFT JOIN TIPOS_PROPIEDAD TP
+        ON UPPER(TP.DESCRIPCION) = UPPER(T.TIPO_PROPIEDAD)
+    LEFT JOIN TIPOS_RESIDENCIA TR
+        ON UPPER(TR.DESCRIPCION) = UPPER(T.TIPO_RESIDENCIA)
+    WHERE T.NUMERO_SERIAL IS NOT NULL
+      AND LENGTH(TRIM(T.NUMERO_SERIAL)) > 0
+      AND NOT EXISTS (
+          SELECT 1 FROM PROPIEDADES P
+          WHERE P.NUMERO_SERIAL = T.NUMERO_SERIAL
+            AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
+      );
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
@@ -322,30 +324,16 @@ EXCEPTION
 END SP_POBLAR_PROPIEDADES;
 /
 
--- 1. CREAR ÍNDICES COMPUESTOS MÁS SELECTIVOS
-CREATE INDEX IDX_PROP_SERIAL_ID_COMP ON
-    PROPIEDADES (
-        NUMERO_SERIAL,
-        ID_PROPIEDAD
-    );
-
-CREATE INDEX IDX_PRUEBA_SERIAL_COMP ON
-    TABLA_PRUEBA (
-        NUMERO_SERIAL,
-        ANIO_VENTA,
-        FECHA_REGISTRO
-    );
-
--- Procedimiento para poblar tabla VENTAS
+-- =================================================================
+-- PROCEDIMIENTO CORREGIDO PARA VENTAS
+-- =================================================================
 CREATE OR REPLACE PROCEDURE SP_POBLAR_VENTAS (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
-    V_FILAS_INSERTADAS  NUMBER := 0;
-    V_DUPLICADOS_PROP   NUMBER := 0;
-    V_DUPLICADOS_PRUEBA NUMBER := 0;
+    V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== CARGA DE VENTAS - MANEJANDO DUPLICADOS ===');
-    
+    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE VENTAS ===');
+
     INSERT INTO VENTAS (
         ID_PROPIEDAD,
         ANIO_VENTA,
@@ -354,70 +342,29 @@ BEGIN
         RELACION_VENTA,
         CODIGO_NO_USO
     )
-        WITH 
-         PROPIEDADES_UNICAS AS (
-            SELECT
-                NUMERO_SERIAL,
-                ID_PROPIEDAD,
-                ROW_NUMBER()
-                OVER(PARTITION BY NUMERO_SERIAL
-                     ORDER BY
-                         ID_PROPIEDAD DESC  -- Tomar la más reciente
-                ) AS RN_PROP
-            FROM
-                PROPIEDADES
-            WHERE
-                NUMERO_SERIAL IS NOT NULL
-        ),
-         PRUEBA_UNICA AS (
-            SELECT
-                NUMERO_SERIAL,
-                ANIO_VENTA,
-                FECHA_REGISTRO,
-                VALOR_VENTA,
-                RELACION_VENTA,
-                COD_NO_USO,
-                ROW_NUMBER()
-                OVER(PARTITION BY NUMERO_SERIAL
-                     ORDER BY
-                         FECHA_REGISTRO DESC, ANIO_VENTA DESC
-                ) AS RN_PRUEBA
-            FROM
-                TABLA_PRUEBA
-            WHERE
-                NUMERO_SERIAL IS NOT NULL
-                AND LENGTH(TRIM(NUMERO_SERIAL)) > 0
-        )
-        SELECT
-            PU.ID_PROPIEDAD,
-            PR.ANIO_VENTA,
-            PR.FECHA_REGISTRO,
-            PR.VALOR_VENTA,
-            CASE
-                WHEN REGEXP_LIKE ( TRIM(PR.RELACION_VENTA),
-                                   '^-?[0-9]+\.?[0-9]*$' ) THEN
-                    TO_NUMBER(REPLACE(
-                        TRIM(PR.RELACION_VENTA),
-                        '.',
-                        ','
-                    ))
-                ELSE
-                    ROUND(TO_NUMBER(REPLACE(PR.RELACION_VENTA, '.', '')) / 1000000000,
-                          3)
-            END,
-            PR.COD_NO_USO
-        FROM
-                 PRUEBA_UNICA PR
-            INNER JOIN PROPIEDADES_UNICAS PU ON PU.NUMERO_SERIAL = PR.NUMERO_SERIAL
-        WHERE
-                PU.RN_PROP = 1
-            AND PR.RN_PRUEBA = 1;
+    SELECT
+        P.ID_PROPIEDAD,
+        T.ANIO_VENTA,
+        T.FECHA_REGISTRO,
+        T.VALOR_VENTA,
+        CASE
+            WHEN REGEXP_LIKE(TRIM(T.RELACION_VENTA), '^-?[0-9]+\.?[0-9]*$') THEN 
+                ROUND(TO_NUMBER(TRIM(T.RELACION_VENTA)), 3)
+            ELSE
+                ROUND(TO_NUMBER(REPLACE(T.RELACION_VENTA, '.', '')) / 1000000000, 3)
+        END,
+        T.COD_NO_USO
+    FROM TABLA_PRUEBA T
+    INNER JOIN PUEBLOS PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
+    INNER JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+                                AND L.ID_PUEBLO = PU.ID_PUEBLO
+    INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
+                             AND P.ID_LOCALIZACION = L.ID_LOCALIZACION;
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
     SP_REGISTRAR_CONTROL('VENTAS', V_FILAS_INSERTADAS, 'INSERT', P_FECHA_CARGA);
     DBMS_OUTPUT.PUT_LINE('Ventas insertadas: ' || V_FILAS_INSERTADAS);
-    DBMS_OUTPUT.PUT_LINE('Registros esperados: ~24,854 (número de NUMERO_SERIAL únicos)');
     DBMS_OUTPUT.PUT_LINE('Fecha de proceso: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
 EXCEPTION
     WHEN OTHERS THEN
@@ -427,77 +374,75 @@ EXCEPTION
 END SP_POBLAR_VENTAS;
 /
 
--- Procedimiento para poblar tabla OBSERVACIONES
+
+-- =================================================================
+-- PROCEDIMIENTO CORREGIDO PARA OBSERVACIONES
+-- =================================================================
 CREATE OR REPLACE PROCEDURE SP_POBLAR_OBSERVACIONES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
-    V_FILAS_ASE        NUMBER := 0;
-    V_FILAS_OPM        NUMBER := 0;
-    V_TOTAL_OBS        NUMBER := 0;
-    V_REGISTROS_VENTAS NUMBER := 0;
+    V_FILAS_ASE  NUMBER := 0;
+    V_FILAS_OPM  NUMBER := 0;
+    V_TOTAL_OBS  NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE OBSERVACIONES ===');
-    
-    -- Verificar cuántas ventas tenemos como referencia
-    SELECT COUNT(*) INTO V_REGISTROS_VENTAS FROM VENTAS;
-    DBMS_OUTPUT.PUT_LINE('Registros en VENTAS para referenciar: ' || V_REGISTROS_VENTAS);
-    
+
+    -- ASE
     INSERT INTO OBSERVACIONES (
         ID_VENTA,
         NOTA,
         TIPO_ORIGEN
     )
-    WITH OBSERVACIONES_ASE AS (
-        SELECT DISTINCT
-            V.ID_VENTA,
-            TP.OB_ASESOR as NOTA_ASE,
-            'ASE' as TIPO
-        FROM TABLA_PRUEBA TP
-        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL 
-        INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                           AND V.ANIO_VENTA = TP.ANIO_VENTA
-                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO
-        WHERE TP.OB_ASESOR IS NOT NULL
-          AND LENGTH(TRIM(TP.OB_ASESOR)) > 0
-    )
-    SELECT ID_VENTA, NOTA_ASE, TIPO
-    FROM OBSERVACIONES_ASE;
+    SELECT DISTINCT
+        V.ID_VENTA,
+        T.OB_ASESOR,
+        'ASE'
+    FROM TABLA_PRUEBA T
+    INNER JOIN PUEBLOS PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
+    INNER JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+                                AND L.ID_PUEBLO = PU.ID_PUEBLO
+    INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
+                             AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
+    INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
+                       AND V.ANIO_VENTA = T.ANIO_VENTA
+                       AND V.FECHA_REGISTRO = T.FECHA_REGISTRO
+    WHERE T.OB_ASESOR IS NOT NULL
+      AND LENGTH(TRIM(T.OB_ASESOR)) > 0;
 
     V_FILAS_ASE := SQL%ROWCOUNT;
-    
+
+    -- OPM
     INSERT INTO OBSERVACIONES (
         ID_VENTA,
         NOTA,
         TIPO_ORIGEN
     )
-    WITH OBSERVACIONES_OPM AS (
-        SELECT DISTINCT
-            V.ID_VENTA,
-            TP.OB_OPM as NOTA_OPM,
-            'OPM' as TIPO
-        FROM TABLA_PRUEBA TP
-        INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = TP.NUMERO_SERIAL
-        INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                           AND V.ANIO_VENTA = TP.ANIO_VENTA
-                           AND V.FECHA_REGISTRO = TP.FECHA_REGISTRO
-        WHERE TP.OB_OPM IS NOT NULL
-          AND LENGTH(TRIM(TP.OB_OPM)) > 0
-    )
-    SELECT ID_VENTA, NOTA_OPM, TIPO
-    FROM OBSERVACIONES_OPM;
+    SELECT DISTINCT
+        V.ID_VENTA,
+        T.OB_OPM,
+        'OPM'
+    FROM TABLA_PRUEBA T
+    INNER JOIN PUEBLOS PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
+    INNER JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+                                AND L.ID_PUEBLO = PU.ID_PUEBLO
+    INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
+                             AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
+    INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
+                       AND V.ANIO_VENTA = T.ANIO_VENTA
+                       AND V.FECHA_REGISTRO = T.FECHA_REGISTRO
+    WHERE T.OB_OPM IS NOT NULL
+      AND LENGTH(TRIM(T.OB_OPM)) > 0;
 
     V_FILAS_OPM := SQL%ROWCOUNT;
     V_TOTAL_OBS := V_FILAS_ASE + V_FILAS_OPM;
-    
+
     COMMIT;
-    
     SP_REGISTRAR_CONTROL('OBSERVACIONES', V_TOTAL_OBS, 'INSERT', P_FECHA_CARGA);
-    
     DBMS_OUTPUT.PUT_LINE('Observaciones insertadas: ' || V_TOTAL_OBS);
     DBMS_OUTPUT.PUT_LINE('  - ASE: ' || V_FILAS_ASE);
     DBMS_OUTPUT.PUT_LINE('  - OPM: ' || V_FILAS_OPM);
     DBMS_OUTPUT.PUT_LINE('Fecha de proceso: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
-    
+
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
@@ -505,6 +450,34 @@ EXCEPTION
         RAISE;
 END SP_POBLAR_OBSERVACIONES;
 /
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 -- 12. Procedimiento para limpiar base de datos (mantener estructura)
 CREATE OR REPLACE PROCEDURE SP_LIMPIAR_BASE_DATOS (

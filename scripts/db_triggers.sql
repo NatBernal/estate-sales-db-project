@@ -1,0 +1,6 @@
+--Archivo de creación de triggers de BD ventas de inmuebles
+--Fecha de creación: 18/05/2025
+--Creado por: Natalia Bernal & Mileth Martinez
+--Modificado por:
+--Fecha de modificación:
+--Observación:
