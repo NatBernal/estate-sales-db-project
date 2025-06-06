@@ -574,8 +574,7 @@ BEGIN
             'La fecha debe ser un día hábil (lunes a viernes). ' ||
             'Día proporcionado: ' || TO_CHAR(P_FECHA_CARGA, 'DAY, DD/MM/YYYY'));
     END IF;
-    
-    -- Validar horario laboral
+
     v_hora := TO_NUMBER(TO_CHAR(P_FECHA_CARGA, 'HH24'));
     IF v_hora < 8 OR v_hora >= 18 THEN
         RAISE_APPLICATION_ERROR(C_HORARIO_LABORAL, 

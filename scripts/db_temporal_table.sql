@@ -25,3 +25,7 @@ CREATE TABLE TABLA_PRUEBA (
     COORDENADAS     VARCHAR2(128)
 )
 TABLESPACE DATOS_VENTAS;
+
+
+-- Es necesario importar los datos desde el archivo CSV
+-- para poder llenar la tabla temporal
