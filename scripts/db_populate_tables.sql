@@ -149,7 +149,6 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_TIPOS_RESIDENCIA (
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE TIPOS DE RESIDENCIA ===');
     INSERT INTO TIPOS_RESIDENCIA ( DESCRIPCION )
         SELECT DISTINCT
             TIPO_RESIDENCIA
@@ -217,7 +216,6 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_LOCALIZACIONES (
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE LOCALIZACIONES ===');
     INSERT INTO LOCALIZACIONES (
         ID_PUEBLO,
         LATITUD,
@@ -265,7 +263,6 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_PROPIEDADES (
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE PROPIEDADES ===');
     INSERT INTO PROPIEDADES (
         NUMERO_SERIAL,
         ID_TIPO_PROPIEDAD,
@@ -340,7 +337,6 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_VENTAS (
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== CARGA DE VENTAS - CONSIDERANDO SERIAL POR PUEBLO ===');
     INSERT INTO VENTAS (
         ID_PROPIEDAD,
         ANIO_VENTA,
@@ -433,7 +429,6 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_OBSERVACIONES (
     V_FILAS_OPM NUMBER := 0;
     V_TOTAL_OBS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE OBSERVACIONES ===');
 
     -- ASE
     INSERT INTO OBSERVACIONES (
@@ -553,4 +548,92 @@ EXCEPTION
         DBMS_OUTPUT.PUT_LINE('ERROR EN LIMPIEZA: ' || SQLERRM);
         RAISE;
 END SP_LIMPIAR_BASE_DATOS;
+/
+
+-- Funcion para validar la fecha de carga
+CREATE OR REPLACE FUNCTION FN_VALIDAR_FECHA_CARGA (
+    P_FECHA_CARGA IN DATE
+) RETURN BOOLEAN IS
+    v_dia_semana NUMBER;
+    v_hora NUMBER;
+    v_diferencia_dias NUMBER;
+    C_FECHA_NULA CONSTANT NUMBER := -20001;
+    C_DIA_NO_HABIL CONSTANT NUMBER := -20002;
+    C_HORARIO_LABORAL CONSTANT NUMBER := -20003;
+    C_FECHA_ANTERIOR CONSTANT NUMBER := -20004;
+    C_FECHA_POSTERIOR CONSTANT NUMBER := -20005;
+BEGIN
+    IF P_FECHA_CARGA IS NULL THEN
+        RAISE_APPLICATION_ERROR(C_FECHA_NULA,'La fecha de carga no puede ser NULL.');
+    END IF;
+    
+    v_dia_semana := TO_NUMBER(TO_CHAR(P_FECHA_CARGA, 'D'));
+    
+    IF v_dia_semana < 2 OR v_dia_semana > 6 THEN
+        RAISE_APPLICATION_ERROR(C_DIA_NO_HABIL, 
+            'La fecha debe ser un día hábil (lunes a viernes). ' ||
+            'Día proporcionado: ' || TO_CHAR(P_FECHA_CARGA, 'DAY, DD/MM/YYYY'));
+    END IF;
+    
+    -- Validar horario laboral
+    v_hora := TO_NUMBER(TO_CHAR(P_FECHA_CARGA, 'HH24'));
+    IF v_hora < 8 OR v_hora >= 18 THEN
+        RAISE_APPLICATION_ERROR(C_HORARIO_LABORAL, 
+            'La fecha debe estar dentro del horario laboral (08:00 - 17:59). ' ||
+            'Hora proporcionada: ' || TO_CHAR(P_FECHA_CARGA, 'HH24:MI:SS'));
+    END IF;
+    
+
+    v_diferencia_dias := TRUNC(P_FECHA_CARGA) - TRUNC(SYSDATE);
+    
+    IF v_diferencia_dias < -3 THEN
+        RAISE_APPLICATION_ERROR(C_FECHA_ANTERIOR, 
+            'No se permiten fechas de más de 3 días en el pasado. ' ||
+            'Fecha proporcionada: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS') ||
+            ', Fecha mínima permitida: ' || TO_CHAR(SYSDATE - 3, 'DD/MM/YYYY HH24:MI:SS') ||
+            ', Fecha actual: ' || TO_CHAR(SYSDATE, 'DD/MM/YYYY HH24:MI:SS'));
+    END IF;
+    
+    IF v_diferencia_dias > 3 THEN
+        RAISE_APPLICATION_ERROR(C_FECHA_POSTERIOR, 
+            'No se permiten fechas con más de 3 días de antelación. ' ||
+            'Fecha proporcionada: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS') ||
+            ', Fecha máxima permitida: ' || TO_CHAR(SYSDATE + 3, 'DD/MM/YYYY HH24:MI:SS') ||
+            ', Fecha actual: ' || TO_CHAR(SYSDATE, 'DD/MM/YYYY HH24:MI:SS'));
+    END IF;
+    
+    
+    RETURN TRUE;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE;
+END FN_VALIDAR_FECHA_CARGA;
+/
+
+-- Procedimiento para poblar todas las tablas
+CREATE OR REPLACE PROCEDURE SP_POBLAR_TODO (
+    P_FECHA_CARGA IN DATE DEFAULT SYSDATE
+) AS
+BEGIN
+
+    FN_VALIDAR_FECHA_CARGA(P_FECHA_CARGA);
+
+    IF FN_VALIDAR_FECHA_CARGA(P_FECHA_CARGA) THEN
+        SP_POBLAR_PUEBLOS(P_FECHA_CARGA);
+        SP_POBLAR_TIPOS_PROPIEDAD(P_FECHA_CARGA);
+        SP_POBLAR_TIPOS_RESIDENCIA(P_FECHA_CARGA);
+        SP_POBLAR_LOCALIZACIONES(P_FECHA_CARGA);
+        SP_POBLAR_PROPIEDADES(P_FECHA_CARGA);
+        SP_POBLAR_VENTAS(P_FECHA_CARGA);
+        SP_POBLAR_OBSERVACIONES(P_FECHA_CARGA);
+    END IF;
+
+    DBMS_OUTPUT.PUT_LINE('Poblado completo realizado con fecha: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
+
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Error en SP_POBLAR_TODO: ' || SQLERRM);
+        RAISE;
+END SP_POBLAR_TODO; 
 /
