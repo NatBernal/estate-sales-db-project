@@ -1,3 +1,10 @@
+--Archivo de creacion de package de Ventas
+--Fecha de creación: 01/06/2025
+--Creado por: Natalia Bernal & Mileth Martinez
+--Modificado por:
+--Fecha de modificación:
+--Observación:
+
 CREATE OR REPLACE PACKAGE PKG_VENTAS_INMUEBLES AS
 
     PROCEDURE SP_REGISTRAR_CONTROL (

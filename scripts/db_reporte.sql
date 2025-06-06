@@ -1,3 +1,10 @@
+--Archivo de Generación de Reportes
+--Fecha de creación: 06/06/2025
+--Creado por: Natalia Bernal & Mileth Martinez
+--Modificado por:
+--Fecha de modificación:
+--Observación:
+
 CREATE TABLE REPORTE_VENTAS_ANIO (
     ANIO_VENTA           NUMBER,
     TOTAL_VENTAS         NUMBER,
@@ -6,7 +13,7 @@ CREATE TABLE REPORTE_VENTAS_ANIO (
     FECHA_GENERACION     DATE
 );
 
-CREATE OR REPLACE PROCEDURE GENERAR_REPORTE (
+CREATE OR REPLACE PROCEDURE SP_GENERAR_REPORTE (
     P_FECHA_INICIO IN DATE,
     P_FECHA_FIN    IN DATE
 ) AS
@@ -55,7 +62,11 @@ BEGIN
             ANIO_VENTA;
 
     COMMIT;
-END GENERAR_REPORTE;
+
+    -- Llamada al procedimiento de pivotear los resultados
+    SP_GENERAR_VISTA_PIVOTE_VENTAS;
+
+END SP_GENERAR_REPORTE;
 /
 
 CREATE OR REPLACE PROCEDURE SP_MOSTRAR_ESTADISTICAS (
@@ -64,15 +75,12 @@ CREATE OR REPLACE PROCEDURE SP_MOSTRAR_ESTADISTICAS (
     V_COUNT        NUMBER;
     V_FECHA_FILTRO DATE := P_FECHA_PROCESO;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('___________________________________________');
-    DBMS_OUTPUT.PUT_LINE('___ ESTADÍSTICAS DE LA BASE DE DATOS  ___');
+    DBMS_OUTPUT.PUT_LINE('Estadísticas de la base de datos');
     IF V_FECHA_FILTRO IS NOT NULL THEN
-        DBMS_OUTPUT.PUT_LINE('___ Fecha proceso: '
-                             || TO_CHAR(V_FECHA_FILTRO, 'DD MM YYYY')
-                             || ' __');
+        DBMS_OUTPUT.PUT_LINE('Fecha proceso: '
+                             || TO_CHAR(V_FECHA_FILTRO, 'DD MM YYYY'));
     END IF;
 
-    DBMS_OUTPUT.PUT_LINE('==========================================');
     SELECT
         COUNT(*)
     INTO V_COUNT
@@ -122,8 +130,7 @@ BEGIN
         OBSERVACIONES;
 
     DBMS_OUTPUT.PUT_LINE('Observaciones: ' || V_COUNT);
-    DBMS_OUTPUT.PUT_LINE('______________________________________________');
-    DBMS_OUTPUT.PUT_LINE('_______ RESUMEN DE PROCESOS DE CARGA    _______');
+    DBMS_OUTPUT.PUT_LINE('Resumen de control de carga');
     FOR REC IN (
         SELECT
             NOMBRE_TABLA,
@@ -152,7 +159,6 @@ BEGIN
                              || ' veces');
     END LOOP;
 
-    DBMS_OUTPUT.PUT_LINE('________________________________________-');
 END SP_MOSTRAR_ESTADISTICAS;
 /
 
@@ -206,52 +212,59 @@ EXCEPTION
 END GET_PROMEDIO_VENTAS_ANIO;
 /
 
-CREATE VIEW REPORTE_PIBOTE AS
-    SELECT
-        *
-    FROM
-        (
+-- Crear pivote dinamico para el reporte
+create or replace PROCEDURE SP_GENERAR_VISTA_PIVOTE_VENTAS
+AS
+    v_sql   CLOB;
+    v_cols  CLOB := '';
+BEGIN
+    -- Construir dinámicamente la lista de columnas para el PIVOT
+    FOR r IN (
+        SELECT DISTINCT ANIO_VENTA
+        FROM REPORTE_VENTAS_ANIO
+        ORDER BY ANIO_VENTA
+    )
+    LOOP
+        v_cols := v_cols || r.ANIO_VENTA || ' AS "AÑO_' || r.ANIO_VENTA || '", ';
+    END LOOP;
+
+    -- Eliminar la última coma
+    v_cols := RTRIM(v_cols, ', ');
+
+    -- Verificar que la variable v_cols no esté vacía
+    IF v_cols IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20001, 'No hay años disponibles para el reporte.');
+    END IF;
+
+    -- Construir el SQL del PIVOT
+    v_sql := '
+        CREATE OR REPLACE VIEW VW_REPORTE_VENTAS_PIVOTE AS
+        SELECT *
+        FROM (
             SELECT
-                'TOTAL_VENTAS' AS METRICA,
+                ''TOTAL_VENTAS'' AS METRICA,
                 ANIO_VENTA,
-                TOTAL_VENTAS   AS VALOR
-            FROM
-                REPORTE_VENTAS_ANIO
+                TOTAL_VENTAS AS VALOR
+            FROM REPORTE_VENTAS_ANIO
             UNION ALL
             SELECT
-                'PROMEDIO_VALOR_VENTA' AS METRICA,
+                ''PROMEDIO_VALOR_VENTA'',
                 ANIO_VENTA,
                 PROMEDIO_VALOR_VENTA
-            FROM
-                REPORTE_VENTAS_ANIO
+            FROM REPORTE_VENTAS_ANIO
             UNION ALL
             SELECT
-                'TOTAL_VALOR_VENTA' AS METRICA,
+                ''TOTAL_VALOR_VENTA'',
                 ANIO_VENTA,
                 TOTAL_VALOR_VENTA
-            FROM
-                REPORTE_VENTAS_ANIO
-        ) PIVOT (
-            SUM(VALOR)
-            FOR ANIO_VENTA
-            IN ( 2001 AS "AÑO_2001", 2005 AS "AÑO_2005", 2006 AS "AÑO_2006", 2007 AS "AÑO_2007", 2008 AS "AÑO_2008", 2009 AS "AÑO_2009"
-            , 2011 AS "AÑO_2011", 2012 AS "AÑO_2012", 2013 AS "AÑO_2013", 2014 AS "AÑO_2014", 2015 AS "AÑO_2015", 2016 AS "AÑO_2016",
-            2019 AS "AÑO_2019", 2020 AS "AÑO_2020", 2021 AS "AÑO_2021" )
+            FROM REPORTE_VENTAS_ANIO
         )
-    ORDER BY
-        METRICA;
+        PIVOT (
+            SUM(VALOR)
+            FOR ANIO_VENTA IN (' || v_cols || ')
+        )
+        ORDER BY METRICA';
 
-SELECT * FROM REPORTE_PIBOTE;
-
-BEGIN
-
-GENERAR_REPORTE(
-
-    TO_DATE('2001-01-01', 'YYYY-MM-DD'),
-
-    TO_DATE('2024-12-31', 'YYYY-MM-DD')
-
-); end;
-/
-
-select * from reporte_ventas_anio;
+    -- Ejecutar la creación de la vista
+    EXECUTE IMMEDIATE v_sql;
+END sp_crear_vista_pivote_dinamica;

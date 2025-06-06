@@ -1,8 +1,14 @@
+--Archivo de creacion de package de reportes
+--Fecha de creación: 01/06/2025
+--Creado por: Natalia Bernal & Mileth Martinez
+--Modificado por:
+--Fecha de modificación:
+--Observación:
 
 CREATE OR REPLACE PACKAGE PKG_REPORTES AS
     
     -- Procedimiento para generar reporte de ventas por año
-    PROCEDURE GENERAR_REPORTE(
+    PROCEDURE SP_GENERAR_REPORTE(
         p_fecha_inicio IN DATE,
         p_fecha_fin    IN DATE
     );
@@ -27,8 +33,8 @@ END PKG_REPORTES;
 
 CREATE OR REPLACE PACKAGE BODY PKG_REPORTES AS
 
-    -- Implementación del procedimiento GENERAR_REPORTE
-    PROCEDURE GENERAR_REPORTE(
+    -- Implementación del procedimiento SP_GENERAR_REPORTE
+    PROCEDURE SP_GENERAR_REPORTE(
         p_fecha_inicio IN DATE,
         p_fecha_fin    IN DATE
     ) AS
@@ -54,7 +60,7 @@ CREATE OR REPLACE PACKAGE BODY PKG_REPORTES AS
         GROUP BY ANIO_VENTA;
 
         COMMIT;
-    END GENERAR_REPORTE;
+    END SP_GENERAR_REPORTE;
 
     -- Implementación del procedimiento SP_MOSTRAR_ESTADISTICAS
     PROCEDURE SP_MOSTRAR_ESTADISTICAS(
@@ -63,15 +69,11 @@ CREATE OR REPLACE PACKAGE BODY PKG_REPORTES AS
         V_COUNT        NUMBER;
         V_FECHA_FILTRO DATE :_ P_FECHA_PROCESO;
     BEGIN
-        DBMS_OUTPUT.PUT_LINE('__________________________________________');
-        DBMS_OUTPUT.PUT_LINE('___ ESTADÍSTICAS DE LA BASE DE DATOS  ___');
+        DBMS_OUTPUT.PUT_LINE('Estadísticas de la base de datos');
         IF V_FECHA_FILTRO IS NOT NULL THEN
-            DBMS_OUTPUT.PUT_LINE('___ Fecha proceso: '
-                                 || TO_CHAR(V_FECHA_FILTRO, 'DDMMYYYY')
-                                 || ' ___');
+            DBMS_OUTPUT.PUT_LINE('Fecha proceso: '
+                                 || TO_CHAR(V_FECHA_FILTRO, 'DDMMYYYY'));
         END IF;
-
-        DBMS_OUTPUT.PUT_LINE('__________________________________________');
         
         -- Estadísticas de tablas
         SELECT COUNT(*) INTO V_COUNT FROM PUEBLOS;
@@ -94,11 +96,9 @@ CREATE OR REPLACE PACKAGE BODY PKG_REPORTES AS
         
         SELECT COUNT(*) INTO V_COUNT FROM OBSERVACIONES;
         DBMS_OUTPUT.PUT_LINE('Observaciones: ' || V_COUNT);
-        
-        DBMS_OUTPUT.PUT_LINE('__________________________________________');
-        
+                
         -- Mostrar resumen de control de carga
-        DBMS_OUTPUT.PUT_LINE('___ RESUMEN DE PROCESOS DE CARGA       ___');
+        DBMS_OUTPUT.PUT_LINE('Resumen de control de carga:');
         FOR REC IN (
             SELECT
                 NOMBRE_TABLA,
@@ -119,8 +119,6 @@ CREATE OR REPLACE PACKAGE BODY PKG_REPORTES AS
                                  || REC.VECES_EJECUTADO
                                  || ' veces');
         END LOOP;
-
-        DBMS_OUTPUT.PUT_LINE('__________________________________________');
     END SP_MOSTRAR_ESTADISTICAS;
 
 
