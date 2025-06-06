@@ -5,7 +5,7 @@
 --Fecha de modificación:
 --Observación:
 
--- 13. Procedimiento para mostrar estadísticas y control
+-- Procedimiento para mostrar estadísticas y control
 CREATE OR REPLACE PROCEDURE SP_MOSTRAR_ESTADISTICAS (
     P_FECHA_PROCESO IN DATE DEFAULT NULL
 ) AS
@@ -148,3 +148,4 @@ BEGIN
     END LOOP;
 
 END SP_CONSULTAR_CONTROL;
+/

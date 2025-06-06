@@ -73,7 +73,8 @@ BEGIN
     ) VALUES (
         v_user, v_host, v_op, 'VENTAS', v_val_ant, v_val_new
     );
-END;
+END trg_aud_ventas;
+/
 
 -- Disparador para auditar cambios en la tabla propiedades
 -- Este disparador registra actualizaciones y eliminaciones en la tabla propiedades.
@@ -109,7 +110,8 @@ BEGIN
     ) VALUES (
         v_user, v_host, v_op, 'PROPIEDADES', v_ant, v_nuev
     );
-END;
+END trg_aud_propiedades;
+/
 
 -- Disparador para auditar cambios en la tabla observaciones
 -- Este disparador registra actualizaciones y eliminaciones en la tabla observaciones.  
@@ -145,7 +147,8 @@ BEGIN
     ) VALUES (
         v_user, v_host, v_op, 'OBSERVACIONES', v_ant, v_nuev
     );
-END;
+END trg_aud_observaciones;
+/
 
 -- Disparador para auditar cambios en la tabla localizaciones
 -- Este disparador registra actualizaciones y eliminaciones en la tabla localizaciones.
@@ -181,7 +184,8 @@ BEGIN
     ) VALUES (
         v_user, v_host, v_op, 'LOCALIZACIONES', v_ant, v_nuev
     );
-END;
+END trg_aud_localizaciones;
+/
 
 -- Disparador para auditar cambios en la tabla pueblos
 -- Este disparador registra actualizaciones y eliminaciones en la tabla pueblos.
@@ -213,7 +217,8 @@ BEGIN
         SYS_CONTEXT('USERENV', 'HOST'),
         v_op, 'PUEBLOS', v_ant, v_nuev
     );
-END;
+END trg_audit_pueblos;
+/
 
 CREATE OR REPLACE TRIGGER trg_audit_tipos_propiedad
 BEFORE UPDATE OR DELETE ON tipos_propiedad
@@ -243,7 +248,8 @@ BEGIN
         SYS_CONTEXT('USERENV', 'HOST'),
         v_op, 'TIPOS_PROPIEDAD', v_ant, v_nuev
     );
-END;
+END trg_audit_tipos_propiedad;
+/
 
 -- Disparador para auditar cambios en la tabla tipos_residencia
 -- Este disparador registra actualizaciones y eliminaciones en la tabla tipos_residencia.
@@ -275,4 +281,5 @@ BEGIN
         SYS_CONTEXT('USERENV', 'HOST'),
         v_op, 'TIPOS_RESIDENCIA', v_ant, v_nuev
     );
-END;
+END trg_audit_tipos_residencia;
+/
