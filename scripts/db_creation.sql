@@ -128,7 +128,7 @@ COMMENT ON COLUMN PROPIEDADES.ID_PROPIEDAD IS
     'Identificador único de la propiedad.';
 
 COMMENT ON COLUMN PROPIEDADES.NUMERO_SERIAL IS
-    'Número de serie de la propiedad';
+    'Número de serie de la propiedad, unico dentro de la localizacion';
 
 COMMENT ON COLUMN PROPIEDADES.ID_TIPO_PROPIEDAD IS
     'Tipo general de propiedad.';
@@ -245,6 +245,10 @@ ALTER TABLE PROPIEDADES
 ALTER TABLE PROPIEDADES
     ADD CONSTRAINT FK_PROPIEDADES_LOCALIZACION FOREIGN KEY ( ID_LOCALIZACION )
         REFERENCES LOCALIZACIONES ( ID_LOCALIZACION );
+
+-- Garantizar que solo exista un numero serial por localizacion
+ALTER TABLE PROPIEDADES
+ADD CONSTRAINT UC_PROP_SERIAL_LOCAL UNIQUE (NUMERO_SERIAL, ID_LOCALIZACION);
 
 -- Crear restricciones de la tabla VENTAS
 ALTER TABLE VENTAS

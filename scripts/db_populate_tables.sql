@@ -218,46 +218,35 @@ CREATE OR REPLACE PROCEDURE SP_POBLAR_LOCALIZACIONES (
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE LOCALIZACIONES ===');
-    FOR REC IN (
-        SELECT DISTINCT
-            T.PUEBLO,
-            T.DIRECCION,
-            T.COORDENADAS
+    INSERT INTO LOCALIZACIONES (
+        ID_PUEBLO,
+        LATITUD,
+        LONGITUD,
+        DIRECCION
+    )
+        SELECT
+            P.ID_PUEBLO,
+            EXTRACT_COORDINATES(T.COORDENADAS, 1),  -- 1 para TRUE (latitud)
+            EXTRACT_COORDINATES(T.COORDENADAS, 0),  -- 0 para FALSE (longitud)
+            TRIM(UPPER(T.DIRECCION))
         FROM
-            TABLA_PRUEBA T
+                 TABLA_PRUEBA T
+            JOIN PUEBLOS P ON TRIM(UPPER(P.NOMBRE)) = TRIM(UPPER(T.PUEBLO))
         WHERE
-            T.DIRECCION IS NOT NULL
-            AND LENGTH(TRIM(T.DIRECCION)) > 0
+            ( T.DIRECCION IS NOT NULL
+              AND LENGTH(TRIM(T.DIRECCION)) > 0 )
+            OR T.COORDENADAS IS NOT NULL
             AND NOT EXISTS (
                 SELECT
                     1
                 FROM
                     LOCALIZACIONES L
                 WHERE
-                    UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
-            )
-    ) LOOP
-        -- Insertar localización usando la función auxiliar
-        INSERT INTO LOCALIZACIONES (
-            ID_PUEBLO,
-            LATITUD,
-            LONGITUD,
-            DIRECCION
-        ) VALUES ( (
-            SELECT
-                ID_PUEBLO
-            FROM
-                PUEBLOS
-            WHERE
-                UPPER(NOMBRE) = UPPER(REC.PUEBLO)
-        ),
-                   EXTRACT_COORDINATES(REC.COORDENADAS, 1),  -- 1 para TRUE (latitud)
-                   EXTRACT_COORDINATES(REC.COORDENADAS, 0),  -- 0 para FALSE (longitud)
-                   TRIM(UPPER(REC.DIRECCION)) );
+                        TRIM(UPPER(L.DIRECCION)) = TRIM(UPPER(T.DIRECCION))
+                    AND L.ID_PUEBLO = P.ID_PUEBLO
+            );
 
-        V_FILAS_INSERTADAS := V_FILAS_INSERTADAS + 1;
-    END LOOP;
-
+    V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
     SP_REGISTRAR_CONTROL('LOCALIZACIONES', V_FILAS_INSERTADAS, 'INSERT', P_FECHA_CARGA);
     DBMS_OUTPUT.PUT_LINE('Localizaciones insertadas: ' || V_FILAS_INSERTADAS);
@@ -270,16 +259,13 @@ EXCEPTION
 END SP_POBLAR_LOCALIZACIONES;
 /
 
--- =================================================================
--- PROCEDIMIENTO CORREGIDO PARA PROPIEDADES
--- =================================================================
+-- Procedimiento para poblar tabla PROPIEDADES
 CREATE OR REPLACE PROCEDURE SP_POBLAR_PROPIEDADES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE PROPIEDADES ===');
-
     INSERT INTO PROPIEDADES (
         NUMERO_SERIAL,
         ID_TIPO_PROPIEDAD,
@@ -287,29 +273,53 @@ BEGIN
         ID_LOCALIZACION,
         VALOR_CATASTRAL
     )
-    SELECT
-        T.NUMERO_SERIAL,
-        TP.ID_TIPO_PROPIEDAD,
-        TR.ID_TIPO_RESIDENCIA,
-        L.ID_LOCALIZACION,
-        T.VALOR_CATASTRAL
-    FROM TABLA_PRUEBA T
-    INNER JOIN PUEBLOS PU
-        ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
-    INNER JOIN LOCALIZACIONES L
-        ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
-       AND L.ID_PUEBLO = PU.ID_PUEBLO
-    LEFT JOIN TIPOS_PROPIEDAD TP
-        ON UPPER(TP.DESCRIPCION) = UPPER(T.TIPO_PROPIEDAD)
-    LEFT JOIN TIPOS_RESIDENCIA TR
-        ON UPPER(TR.DESCRIPCION) = UPPER(T.TIPO_RESIDENCIA)
-    WHERE T.NUMERO_SERIAL IS NOT NULL
-      AND LENGTH(TRIM(T.NUMERO_SERIAL)) > 0
-      AND NOT EXISTS (
-          SELECT 1 FROM PROPIEDADES P
-          WHERE P.NUMERO_SERIAL = T.NUMERO_SERIAL
-            AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
-      );
+        SELECT
+            T.NUMERO_SERIAL,
+            TP.ID_TIPO_PROPIEDAD,
+            TR.ID_TIPO_RESIDENCIA,
+            L.ID_LOCALIZACION,
+            T.VALOR_CATASTRAL
+        FROM
+                 TABLA_PRUEBA T
+            JOIN PUEBLOS          PU ON TRIM(UPPER(PU.NOMBRE)) = TRIM(UPPER(T.PUEBLO))
+            JOIN (
+                SELECT
+                    ID_LOCALIZACION,
+                    DIRECCION,
+                    ID_PUEBLO
+                FROM
+                    (
+                        SELECT
+                            ID_LOCALIZACION,
+                            DIRECCION,
+                            ID_PUEBLO,
+                            ROW_NUMBER()
+                            OVER(PARTITION BY TRIM(UPPER(DIRECCION)),
+                                       ID_PUEBLO
+                                 ORDER BY
+                                     ID_LOCALIZACION
+                            ) AS RN
+                        FROM
+                            LOCALIZACIONES
+                    )
+                WHERE
+                    RN = 1
+            )                L ON TRIM(UPPER(L.DIRECCION)) = TRIM(UPPER(T.DIRECCION))
+                   AND L.ID_PUEBLO = PU.ID_PUEBLO
+            LEFT JOIN TIPOS_PROPIEDAD  TP ON UPPER(TP.DESCRIPCION) = UPPER(T.TIPO_PROPIEDAD)
+            LEFT JOIN TIPOS_RESIDENCIA TR ON UPPER(TR.DESCRIPCION) = UPPER(T.TIPO_RESIDENCIA)
+        WHERE
+            T.NUMERO_SERIAL IS NOT NULL
+            AND LENGTH(TRIM(T.NUMERO_SERIAL)) > 0
+            AND NOT EXISTS (
+                SELECT
+                    1
+                FROM
+                    PROPIEDADES P
+                WHERE
+                        P.NUMERO_SERIAL = T.NUMERO_SERIAL
+                    AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
+            );
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
@@ -324,16 +334,13 @@ EXCEPTION
 END SP_POBLAR_PROPIEDADES;
 /
 
--- =================================================================
--- PROCEDIMIENTO CORREGIDO PARA VENTAS
--- =================================================================
+-- Procedimiento para poblar la tabla VENTAS
 CREATE OR REPLACE PROCEDURE SP_POBLAR_VENTAS (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
     V_FILAS_INSERTADAS NUMBER := 0;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE VENTAS ===');
-
+    DBMS_OUTPUT.PUT_LINE('=== CARGA DE VENTAS - CONSIDERANDO SERIAL POR PUEBLO ===');
     INSERT INTO VENTAS (
         ID_PROPIEDAD,
         ANIO_VENTA,
@@ -342,24 +349,69 @@ BEGIN
         RELACION_VENTA,
         CODIGO_NO_USO
     )
-    SELECT
-        P.ID_PROPIEDAD,
-        T.ANIO_VENTA,
-        T.FECHA_REGISTRO,
-        T.VALOR_VENTA,
-        CASE
-            WHEN REGEXP_LIKE(TRIM(T.RELACION_VENTA), '^-?[0-9]+\.?[0-9]*$') THEN 
-                ROUND(TO_NUMBER(TRIM(T.RELACION_VENTA)), 3)
-            ELSE
-                ROUND(TO_NUMBER(REPLACE(T.RELACION_VENTA, '.', '')) / 1000000000, 3)
-        END,
-        T.COD_NO_USO
-    FROM TABLA_PRUEBA T
-    INNER JOIN PUEBLOS PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
-    INNER JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
-                                AND L.ID_PUEBLO = PU.ID_PUEBLO
-    INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
-                             AND P.ID_LOCALIZACION = L.ID_LOCALIZACION;
+        WITH PROPIEDADES_POR_PUEBLO AS (
+            SELECT
+                P.ID_PROPIEDAD,
+                P.NUMERO_SERIAL,
+                PU.NOMBRE AS PUEBLO,
+                ROW_NUMBER()
+                OVER(PARTITION BY P.NUMERO_SERIAL, PU.NOMBRE
+                     ORDER BY
+                         P.ID_PROPIEDAD DESC
+                )         AS RN_PROP
+            FROM
+                     PROPIEDADES P
+                JOIN LOCALIZACIONES L ON P.ID_LOCALIZACION = L.ID_LOCALIZACION
+                JOIN PUEBLOS        PU ON L.ID_PUEBLO = PU.ID_PUEBLO
+            WHERE
+                P.NUMERO_SERIAL IS NOT NULL
+        ), PRUEBA_UNICA AS (
+            SELECT
+                NUMERO_SERIAL,
+                PUEBLO,
+                ANIO_VENTA,
+                FECHA_REGISTRO,
+                VALOR_VENTA,
+                RELACION_VENTA,
+                COD_NO_USO,
+                ROW_NUMBER()
+                OVER(PARTITION BY NUMERO_SERIAL, PUEBLO
+                     ORDER BY
+                         FECHA_REGISTRO DESC, ANIO_VENTA DESC
+                ) AS RN_PRUEBA
+            FROM
+                TABLA_PRUEBA
+            WHERE
+                NUMERO_SERIAL IS NOT NULL
+                AND PUEBLO IS NOT NULL
+                AND LENGTH(TRIM(NUMERO_SERIAL)) > 0
+                AND LENGTH(TRIM(PUEBLO)) > 0
+        )
+        SELECT
+            PPP.ID_PROPIEDAD,
+            PU.ANIO_VENTA,
+            PU.FECHA_REGISTRO,
+            PU.VALOR_VENTA,
+            CASE
+                WHEN REGEXP_LIKE ( TRIM(PU.RELACION_VENTA),
+                                   '^-?[0-9]+\.?[0-9]*$' ) THEN
+                    TO_NUMBER(REPLACE(
+                        TRIM(PU.RELACION_VENTA),
+                        '.',
+                        ','
+                    ))
+                ELSE
+                    ROUND(TO_NUMBER(REPLACE(PU.RELACION_VENTA, '.', '')) / 1000000000,
+                          3)
+            END,
+            PU.COD_NO_USO
+        FROM
+                 PRUEBA_UNICA PU
+            JOIN PROPIEDADES_POR_PUEBLO PPP ON PPP.NUMERO_SERIAL = PU.NUMERO_SERIAL
+                                                     AND UPPER(PPP.PUEBLO) = UPPER(PU.PUEBLO)
+        WHERE
+                PPP.RN_PROP = 1
+            AND PU.RN_PRUEBA = 1;
 
     V_FILAS_INSERTADAS := SQL%ROWCOUNT;
     COMMIT;
@@ -373,17 +425,13 @@ EXCEPTION
         RAISE;
 END SP_POBLAR_VENTAS;
 /
-
-
--- =================================================================
--- PROCEDIMIENTO CORREGIDO PARA OBSERVACIONES
--- =================================================================
+-- Procedimiento para poblar la tabla OBSERVACIONES
 CREATE OR REPLACE PROCEDURE SP_POBLAR_OBSERVACIONES (
     P_FECHA_CARGA IN DATE DEFAULT SYSDATE
 ) AS
-    V_FILAS_ASE  NUMBER := 0;
-    V_FILAS_OPM  NUMBER := 0;
-    V_TOTAL_OBS  NUMBER := 0;
+    V_FILAS_ASE NUMBER := 0;
+    V_FILAS_OPM NUMBER := 0;
+    V_TOTAL_OBS NUMBER := 0;
 BEGIN
     DBMS_OUTPUT.PUT_LINE('=== INICIANDO CARGA DE OBSERVACIONES ===');
 
@@ -393,21 +441,23 @@ BEGIN
         NOTA,
         TIPO_ORIGEN
     )
-    SELECT DISTINCT
-        V.ID_VENTA,
-        T.OB_ASESOR,
-        'ASE'
-    FROM TABLA_PRUEBA T
-    INNER JOIN PUEBLOS PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
-    INNER JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
-                                AND L.ID_PUEBLO = PU.ID_PUEBLO
-    INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
-                             AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
-    INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                       AND V.ANIO_VENTA = T.ANIO_VENTA
-                       AND V.FECHA_REGISTRO = T.FECHA_REGISTRO
-    WHERE T.OB_ASESOR IS NOT NULL
-      AND LENGTH(TRIM(T.OB_ASESOR)) > 0;
+        SELECT DISTINCT
+            V.ID_VENTA,
+            T.OB_ASESOR,
+            'ASE'
+        FROM
+                 TABLA_PRUEBA T
+            JOIN PUEBLOS        PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
+            JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+                                           AND L.ID_PUEBLO = PU.ID_PUEBLO
+            JOIN PROPIEDADES    P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
+                                        AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
+            JOIN VENTAS         V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
+                                   AND V.ANIO_VENTA = T.ANIO_VENTA
+                                   AND V.FECHA_REGISTRO = T.FECHA_REGISTRO
+        WHERE
+            T.OB_ASESOR IS NOT NULL
+            AND LENGTH(TRIM(T.OB_ASESOR)) > 0;
 
     V_FILAS_ASE := SQL%ROWCOUNT;
 
@@ -417,32 +467,32 @@ BEGIN
         NOTA,
         TIPO_ORIGEN
     )
-    SELECT DISTINCT
-        V.ID_VENTA,
-        T.OB_OPM,
-        'OPM'
-    FROM TABLA_PRUEBA T
-    INNER JOIN PUEBLOS PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
-    INNER JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
-                                AND L.ID_PUEBLO = PU.ID_PUEBLO
-    INNER JOIN PROPIEDADES P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
-                             AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
-    INNER JOIN VENTAS V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
-                       AND V.ANIO_VENTA = T.ANIO_VENTA
-                       AND V.FECHA_REGISTRO = T.FECHA_REGISTRO
-    WHERE T.OB_OPM IS NOT NULL
-      AND LENGTH(TRIM(T.OB_OPM)) > 0;
+        SELECT DISTINCT
+            V.ID_VENTA,
+            T.OB_OPM,
+            'OPM'
+        FROM
+                 TABLA_PRUEBA T
+            JOIN PUEBLOS        PU ON UPPER(PU.NOMBRE) = UPPER(T.PUEBLO)
+            JOIN LOCALIZACIONES L ON UPPER(L.DIRECCION) = UPPER(T.DIRECCION)
+                                           AND L.ID_PUEBLO = PU.ID_PUEBLO
+            JOIN PROPIEDADES    P ON P.NUMERO_SERIAL = T.NUMERO_SERIAL
+                                        AND P.ID_LOCALIZACION = L.ID_LOCALIZACION
+            JOIN VENTAS         V ON V.ID_PROPIEDAD = P.ID_PROPIEDAD
+                                   AND V.ANIO_VENTA = T.ANIO_VENTA
+                                   AND V.FECHA_REGISTRO = T.FECHA_REGISTRO
+        WHERE
+            T.OB_OPM IS NOT NULL
+            AND LENGTH(TRIM(T.OB_OPM)) > 0;
 
     V_FILAS_OPM := SQL%ROWCOUNT;
     V_TOTAL_OBS := V_FILAS_ASE + V_FILAS_OPM;
-
     COMMIT;
     SP_REGISTRAR_CONTROL('OBSERVACIONES', V_TOTAL_OBS, 'INSERT', P_FECHA_CARGA);
     DBMS_OUTPUT.PUT_LINE('Observaciones insertadas: ' || V_TOTAL_OBS);
     DBMS_OUTPUT.PUT_LINE('  - ASE: ' || V_FILAS_ASE);
     DBMS_OUTPUT.PUT_LINE('  - OPM: ' || V_FILAS_OPM);
     DBMS_OUTPUT.PUT_LINE('Fecha de proceso: ' || TO_CHAR(P_FECHA_CARGA, 'DD/MM/YYYY HH24:MI:SS'));
-
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
@@ -451,35 +501,7 @@ EXCEPTION
 END SP_POBLAR_OBSERVACIONES;
 /
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- 12. Procedimiento para limpiar base de datos (mantener estructura)
+-- Procedimiento para limpiar base de datos
 CREATE OR REPLACE PROCEDURE SP_LIMPIAR_BASE_DATOS (
     P_FECHA_LIMPIEZA  IN DATE DEFAULT SYSDATE,
     P_LIMPIAR_CONTROL IN BOOLEAN DEFAULT FALSE
@@ -493,12 +515,7 @@ CREATE OR REPLACE PROCEDURE SP_LIMPIAR_BASE_DATOS (
                                   'TIPOS_PROPIEDAD', 'PUEBLOS');
     V_TABLA            VARCHAR2(50);
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('=======================================');
-    DBMS_OUTPUT.PUT_LINE('=== INICIANDO LIMPIEZA DE BASE DE DATOS ===');
-    DBMS_OUTPUT.PUT_LINE('=== Fecha: '
-                         || TO_CHAR(P_FECHA_LIMPIEZA, 'DD/MM/YYYY HH24:MI:SS')
-                         || ' ===');
-    DBMS_OUTPUT.PUT_LINE('=======================================');
+
     
     -- Deshabilitar constraints temporalmente para acelerar eliminación
     FOR I IN 1..V_TABLAS.COUNT LOOP
@@ -525,36 +542,11 @@ BEGIN
         END IF;
 
     END LOOP;
-    
-    -- Limpiar tabla temporal
-    DELETE FROM TABLA_PRUEBA;
-
-    V_FILAS_ELIMINADAS := SQL%ROWCOUNT;
-    IF V_FILAS_ELIMINADAS > 0 THEN
-        SP_REGISTRAR_CONTROL('TABLA_PRUEBA', V_FILAS_ELIMINADAS, 'DELETE', P_FECHA_LIMPIEZA);
-        DBMS_OUTPUT.PUT_LINE('Tabla TABLA_PRUEBA: '
-                             || V_FILAS_ELIMINADAS
-                             || ' registros eliminados');
-    END IF;
-    
-    -- Limpiar tabla de control si se solicita
-    IF P_LIMPIAR_CONTROL THEN
-        DELETE FROM CONTROL_CARGA;
-
-        V_FILAS_ELIMINADAS := SQL%ROWCOUNT;
-        DBMS_OUTPUT.PUT_LINE('Tabla CONTROL_CARGA: '
-                             || V_FILAS_ELIMINADAS
-                             || ' registros eliminados');
-    END IF;
 
     COMMIT;
-    DBMS_OUTPUT.PUT_LINE('=======================================');
-    DBMS_OUTPUT.PUT_LINE('=== LIMPIEZA COMPLETADA              ===');
-    DBMS_OUTPUT.PUT_LINE('=== Total registros eliminados: '
-                         || V_TOTAL_ELIMINADOS
-                         || ' ===');
-    DBMS_OUTPUT.PUT_LINE('=== Base de datos lista para nueva carga ===');
-    DBMS_OUTPUT.PUT_LINE('=======================================');
+    DBMS_OUTPUT.PUT_LINE('Limpieza finalizada');
+    DBMS_OUTPUT.PUT_LINE('Total registros eliminados: ' || V_TOTAL_ELIMINADOS);
+    DBMS_OUTPUT.PUT_LINE('Base de datos lista para nueva carga');
 EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
@@ -562,147 +554,3 @@ EXCEPTION
         RAISE;
 END SP_LIMPIAR_BASE_DATOS;
 /
-
--- 13. Procedimiento para mostrar estadísticas y control
-CREATE OR REPLACE PROCEDURE SP_MOSTRAR_ESTADISTICAS (
-    P_FECHA_PROCESO IN DATE DEFAULT NULL
-) AS
-    V_COUNT        NUMBER;
-    V_FECHA_FILTRO DATE := P_FECHA_PROCESO;
-BEGIN
-    DBMS_OUTPUT.PUT_LINE('==========================================');
-    DBMS_OUTPUT.PUT_LINE('=== ESTADÍSTICAS DE LA BASE DE DATOS  ===');
-    IF V_FECHA_FILTRO IS NOT NULL THEN
-        DBMS_OUTPUT.PUT_LINE('=== Fecha proceso: '
-                             || TO_CHAR(V_FECHA_FILTRO, 'DD/MM/YYYY')
-                             || ' ===');
-    END IF;
-
-    DBMS_OUTPUT.PUT_LINE('==========================================');
-    
-    -- Estadísticas de tablas
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        PUEBLOS;
-
-    DBMS_OUTPUT.PUT_LINE('Pueblos: ' || V_COUNT);
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        TIPOS_PROPIEDAD;
-
-    DBMS_OUTPUT.PUT_LINE('Tipos de Propiedad: ' || V_COUNT);
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        TIPOS_RESIDENCIA;
-
-    DBMS_OUTPUT.PUT_LINE('Tipos de Residencia: ' || V_COUNT);
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        LOCALIZACIONES;
-
-    DBMS_OUTPUT.PUT_LINE('Localizaciones: ' || V_COUNT);
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        PROPIEDADES;
-
-    DBMS_OUTPUT.PUT_LINE('Propiedades: ' || V_COUNT);
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        VENTAS;
-
-    DBMS_OUTPUT.PUT_LINE('Ventas: ' || V_COUNT);
-    SELECT
-        COUNT(*)
-    INTO V_COUNT
-    FROM
-        OBSERVACIONES;
-
-    DBMS_OUTPUT.PUT_LINE('Observaciones: ' || V_COUNT);
-    DBMS_OUTPUT.PUT_LINE('==========================================');
-    
-    -- Mostrar resumen de control de carga
-    DBMS_OUTPUT.PUT_LINE('=== RESUMEN DE PROCESOS DE CARGA       ===');
-    FOR REC IN (
-        SELECT
-            NOMBRE_TABLA,
-            SUM(FILAS_AFECTADAS) AS TOTAL_FILAS,
-            OPERACION,
-            COUNT(*)             AS VECES_EJECUTADO
-        FROM
-            CONTROL_CARGA
-        WHERE
-            ( V_FECHA_FILTRO IS NULL
-              OR TRUNC(FECHA_PROCESO) = TRUNC(V_FECHA_FILTRO) )
-        GROUP BY
-            NOMBRE_TABLA,
-            OPERACION
-        ORDER BY
-            NOMBRE_TABLA,
-            OPERACION
-    ) LOOP
-        DBMS_OUTPUT.PUT_LINE(REC.NOMBRE_TABLA
-                             || ' ('
-                             || REC.OPERACION
-                             || '): '
-                             || REC.TOTAL_FILAS
-                             || ' filas, '
-                             || REC.VECES_EJECUTADO
-                             || ' veces');
-    END LOOP;
-
-    DBMS_OUTPUT.PUT_LINE('==========================================');
-END SP_MOSTRAR_ESTADISTICAS;
-/
-
--- 14. Procedimiento para consultar historial de control
-CREATE OR REPLACE PROCEDURE SP_CONSULTAR_CONTROL (
-    P_TABLA       IN VARCHAR2 DEFAULT NULL,
-    P_FECHA_DESDE IN DATE DEFAULT NULL,
-    P_FECHA_HASTA IN DATE DEFAULT NULL
-) AS
-BEGIN
-    DBMS_OUTPUT.PUT_LINE('=== HISTORIAL DE CONTROL DE CARGA ===');
-    FOR REC IN (
-        SELECT
-            NOMBRE_TABLA,
-            FILAS_AFECTADAS,
-            OPERACION,
-            TO_CHAR(FECHA_PROCESO, 'DD/MM/YYYY HH24:MI:SS') AS FECHA_PROCESO,
-            USUARIO_PROCESO
-        FROM
-            CONTROL_CARGA
-        WHERE
-            ( P_TABLA IS NULL
-              OR UPPER(NOMBRE_TABLA) = UPPER(P_TABLA) )
-            AND ( P_FECHA_DESDE IS NULL
-                  OR FECHA_PROCESO >= P_FECHA_DESDE )
-            AND ( P_FECHA_HASTA IS NULL
-                  OR FECHA_PROCESO <= P_FECHA_HASTA )
-        ORDER BY
-            FECHA_PROCESO DESC,
-            NOMBRE_TABLA
-    ) LOOP
-        DBMS_OUTPUT.PUT_LINE(REC.FECHA_PROCESO
-                             || ' | '
-                             || RPAD(REC.NOMBRE_TABLA, 20)
-                             || ' | '
-                             || LPAD(REC.OPERACION, 8)
-                             || ' | '
-                             || LPAD(REC.FILAS_AFECTADAS, 8)
-                             || ' | '
-                             || REC.USUARIO_PROCESO);
-    END LOOP;
-
-END SP_CONSULTAR_CONTROL;
